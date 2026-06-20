@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "FC Men",
+    "slug": "fc-men",
+    "scheme": "fcmen",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": ["expo-router"]
+  }
+}

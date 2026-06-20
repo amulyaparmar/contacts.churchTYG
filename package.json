@@ -1,0 +1,17 @@
+{
+  "name": "contacts-church",
+  "private": true,
+  "packageManager": "pnpm@10.5.0",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "dev:web": "turbo dev --filter=@contacts/web",
+    "dev:mobile": "turbo dev --filter=@contacts/mobile",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck"
+  },
+  "devDependencies": {
+    "turbo": "^2.8.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@contacts/web",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev --turbopack",
+    "lint": "eslint .",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lucide-react": "^1.21.0",
+    "next": "16.2.9",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@contacts/tsconfig": "workspace:*",
+    "@types/node": "^24.0.3",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "16.2.9",
+    "typescript": "^5.9.3"
+  }
+}
