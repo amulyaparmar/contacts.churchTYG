@@ -20,7 +20,7 @@ export type ContactActivity = {
   channel: "sms" | "web" | "instagram" | "manual";
   label: string;
   timestamp: string;
-  metadata: Record<string, string | number | boolean>;
+  metadata: Record<string, string | number | boolean | string[]>;
 };
 
 export type Contact = {
@@ -36,13 +36,14 @@ export type Contact = {
   lastTouchAt: string;
   kpiStatus: string;
   notes: string;
-  metadata: Record<string, string | number | boolean | undefined> & {
+  metadata: Record<string, string | number | boolean | string[] | undefined> & {
     church?: string;
     inviteOwner?: string;
     eventInterest?: string;
     conversationStatus?: string;
     instagramHandle?: string;
     rsvpTicket?: string;
+    campaignTags?: string[];
   };
 };
 
@@ -69,7 +70,7 @@ export type RecordContactActivityEvent = {
   phone?: string;
   email?: string;
   source?: string;
-  metadata?: Record<string, string | number | boolean>;
+  metadata?: Record<string, string | number | boolean | string[]>;
 };
 
 export const contactBookViews: Array<{

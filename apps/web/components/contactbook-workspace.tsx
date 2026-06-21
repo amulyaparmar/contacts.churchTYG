@@ -387,6 +387,11 @@ function ContactDetails({
     contact.tags.includes("do_not_message") ||
     contact.tags.includes("opted_out");
   const dndLabel = contact.metadata.dndLevel ? String(contact.metadata.dndLevel) : isDoNotMessage ? "active" : "none";
+  const campaignTags = Array.isArray(contact.metadata.campaignTags)
+    ? contact.metadata.campaignTags
+    : typeof contact.metadata.campaignTags === "string"
+      ? [contact.metadata.campaignTags]
+      : [];
 
   return (
     <aside className="email-detail">
@@ -455,6 +460,8 @@ function ContactDetails({
                 <strong>{contact.metadata.sentiment ?? "Unknown"}</strong>
                 <span>Intent</span>
                 <strong>{contact.metadata.intent ?? "Unknown"}</strong>
+                <span>Campaign</span>
+                <strong>{campaignTags.length > 0 ? campaignTags.join(", ") : "None"}</strong>
                 <span>DND</span>
                 <strong>{dndLabel}</strong>
                 <span>Opt-out</span>

@@ -17,6 +17,7 @@ const DETROIT_METRO_MEN_SCOPE = [
   "mens conference",
   "subsplash.com/detroitmetrodistrict"
 ];
+const GIVEAWAY_CAMPAIGN_MARKER = "#giveaway";
 const HARD_DND_PHONE_DIGITS = "15862588588";
 
 export type ContactbookPullResult = {
@@ -256,6 +257,11 @@ function isDetroitMetroMenConversation(conversation: JsonRecord, contact: Contac
   return DETROIT_METRO_MEN_SCOPE.some((token) => corpus.includes(token));
 }
 
+function hasGiveawayCampaign(conversation: JsonRecord, contact: Contact) {
+  const corpus = getConversationCorpus(conversation, contact);
+  return corpus.includes(GIVEAWAY_CAMPAIGN_MARKER);
+}
+
 function hasAny(value: string, tokens: string[]) {
   return tokens.some((token) => value.includes(token));
 }
@@ -370,10 +376,38 @@ function applyComplianceOverride(
   };
 }
 
-function createDetroitMetroMenNotes(analysis: ReturnType<typeof analyzeDetroitMetroMenConversation>, latestMessage: string) {
+function applyGiveawayCampaign(
+  analysis: ReturnType<typeof analyzeDetroitMetroMenConversation>,
+  hasGiveaway: boolean
+): ReturnType<typeof analyzeDetroitMetroMenConversation> {
+  if (!hasGiveaway) return analysis;
+
+  if (analysis.tags.includes("do_not_message")) {
+    return {
+      ...analysis,
+      tags: [...analysis.tags, "giveaway", "campaign_giveaway"]
+    };
+  }
+
+  return {
+    ...analysis,
+    stage: "instagram_kpi" as Contact["stage"],
+    kpiStatus: "Giveaway campaign lead",
+    nextAction: "Confirm giveaway entry and invite the next FC Men step",
+    eventInterest: "Giveaway",
+    tags: [...analysis.tags, "giveaway", "campaign_giveaway", "kpi_campaign"]
+  };
+}
+
+function createDetroitMetroMenNotes(
+  analysis: ReturnType<typeof analyzeDetroitMetroMenConversation>,
+  latestMessage: string,
+  campaignTags: string[] = []
+) {
   return [
     `Sentiment: ${analysis.sentiment}`,
     `Intent: ${analysis.intent}`,
+    campaignTags.length > 0 ? `Campaign: ${campaignTags.join(", ")}` : "",
     latestMessage ? `Latest: ${latestMessage}` : ""
   ]
     .filter(Boolean)
@@ -503,32 +537,38 @@ function normalizeFluxConvoRows(rows: JsonRecord[]): {
       business
     );
     const messages = Array.isArray(conversation.messages) ? conversation.messages.filter(isRecord) : [];
-    if (!isDetroitMetroMenConversation(conversation, contact)) {
+    const giveawayCampaign = hasGiveawayCampaign(conversation, contact);
+    const detroitMetroMenScope = isDetroitMetroMenConversation(conversation, contact);
+    if (!detroitMetroMenScope && !giveawayCampaign) {
       continue;
     }
 
     const convoId = pickString(conversation, ["id", "convo_id"]);
     const transcript = messages.map(getMessageText).filter(Boolean).join("\n");
     const latestMessage = messages.map(getMessageText).filter(Boolean).at(-1) ?? "";
-    const analysis = applyComplianceOverride(
-      analyzeDetroitMetroMenConversation(transcript || getConversationCorpus(conversation, contact)),
-      contact
+    const baseAnalysis = analyzeDetroitMetroMenConversation(transcript || getConversationCorpus(conversation, contact));
+    const analysis = applyGiveawayCampaign(
+      applyComplianceOverride(baseAnalysis, contact),
+      giveawayCampaign
     );
     const hardDnd = isHardDndPhone(contact.phone);
+    const campaignTags = giveawayCampaign ? [GIVEAWAY_CAMPAIGN_MARKER, "giveaway"] : [];
+    const scope = detroitMetroMenScope ? "@detroitmetromen" : GIVEAWAY_CAMPAIGN_MARKER;
     const enrichedContact: Contact = {
       ...contact,
       stage: analysis.stage,
       tags: Array.from(new Set([...contact.tags, ...analysis.tags])),
       nextAction: analysis.nextAction,
       kpiStatus: analysis.kpiStatus,
-      notes: createDetroitMetroMenNotes(analysis, latestMessage),
+      notes: createDetroitMetroMenNotes(analysis, latestMessage, campaignTags),
       metadata: {
         ...contact.metadata,
         conversationStatus: analysis.intent,
         eventInterest: analysis.eventInterest,
         sentiment: analysis.sentiment,
         intent: analysis.intent,
-        scope: "@detroitmetromen",
+        scope,
+        campaignTags,
         dndLevel: hardDnd ? "highest" : undefined,
         optOut: hardDnd || analysis.tags.includes("opted_out"),
         doNotMessage: hardDnd || analysis.tags.includes("do_not_message"),
@@ -554,6 +594,8 @@ function normalizeFluxConvoRows(rows: JsonRecord[]): {
           queueSource: "flux",
           sentiment: analysis.sentiment,
           intent: analysis.intent,
+          scope,
+          campaignTags,
           dndLevel: hardDnd ? "highest" : "",
           optOut: hardDnd || analysis.tags.includes("opted_out"),
           doNotMessage: hardDnd || analysis.tags.includes("do_not_message"),
@@ -583,7 +625,8 @@ function normalizeFluxConvoRows(rows: JsonRecord[]): {
           agentStatus: pickString(conversation, ["agent_status"]),
           sentiment: analysis.sentiment,
           intent: analysis.intent,
-          scope: "@detroitmetromen",
+          scope,
+          campaignTags,
           dndLevel: hardDnd ? "highest" : "",
           optOut: hardDnd || analysis.tags.includes("opted_out"),
           doNotMessage: hardDnd || analysis.tags.includes("do_not_message"),
