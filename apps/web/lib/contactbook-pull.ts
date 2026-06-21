@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
-
 import {
   type Contact,
   type RecordContactActivityEvent
@@ -46,73 +43,19 @@ function pickString(record: JsonRecord | undefined, keys: string[]) {
   return "";
 }
 
-function readEnvFile(filePath: string) {
-  try {
-    const text = fs.readFileSync(filePath, "utf8");
-    const values: Record<string, string> = {};
-
-    for (const line of text.split(/\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const separator = trimmed.indexOf("=");
-      if (separator === -1) continue;
-      const key = trimmed.slice(0, separator).trim();
-      const value = trimmed
-        .slice(separator + 1)
-        .trim()
-        .replace(/^['"]|['"]$/g, "");
-      if (key && value) values[key] = value;
-    }
-
-    return values;
-  } catch {
-    return {};
-  }
-}
-
-function getLocalFluxEnv() {
-  if (process.env.NODE_ENV === "production") return {};
-
-  const roots = [
-    process.cwd(),
-    path.resolve(process.cwd(), "..", "..", ".."),
-    "/Users/kingdomkidtyg/Desktop/leasemagnetsTYG"
-  ];
-  const candidates = roots.flatMap((root) => [
-    path.join(root, "photonCodesTYG/flux-sample-ideation-demo-TYG/.env"),
-    path.join(root, "TourPrevizInChromeTYG/flux-sample-ideation-demo-TYG/.env"),
-    path.join(root, "use.EmailTYG/.env.local"),
-    path.join(root, "use.EmailTYG/.env")
-  ]);
-
-  for (const candidate of candidates) {
-    const values = readEnvFile(candidate);
-    if (values.NEXT_PUBLIC_SUPABASE_URL && (values.SUPABASE_SERVICE_ROLE_KEY || values.NEXT_PUBLIC_SUPABASE_ANON_KEY)) {
-      return values;
-    }
-  }
-
-  return {};
-}
-
 function getSupabaseConfig() {
-  const localFluxEnv = getLocalFluxEnv();
   const url =
     process.env.CONTACTS_TYG_SUPABASE_URL ??
     process.env.NEXT_PUBLIC_CONTACTS_TYG_SUPABASE_URL ??
     process.env.SUPABASE_URL ??
-    process.env.NEXT_PUBLIC_SUPABASE_URL ??
-    localFluxEnv.NEXT_PUBLIC_SUPABASE_URL ??
-    localFluxEnv.SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL;
 
   const key =
     process.env.CONTACTS_TYG_SUPABASE_SERVICE_ROLE_KEY ??
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
     process.env.CONTACTS_TYG_SUPABASE_ANON_KEY ??
     process.env.NEXT_PUBLIC_CONTACTS_TYG_SUPABASE_ANON_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-    localFluxEnv.SUPABASE_SERVICE_ROLE_KEY ??
-    localFluxEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !key) return null;
 
