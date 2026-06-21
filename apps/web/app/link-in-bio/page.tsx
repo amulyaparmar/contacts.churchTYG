@@ -2,18 +2,19 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowLeft,
-  ArrowRight,
   ArrowUpRight,
   CalendarDays,
   Camera,
-  Clock,
   MapPin,
   Share2,
-  Sparkles,
   UsersRound
 } from "lucide-react";
+import { InstagramMediaGrid } from "@/components/instagram-media-grid";
+import instagramFeed from "@/data/detroitmetromen-instagram-posts.json";
 
 const registrationUrl = "https://subsplash.com/detroitmetrodistrict/lb/ev/+n7t52y4";
+const instagramUrl = "https://www.instagram.com/detroitmetromen/";
+const instagramPosts = instagramFeed.posts.slice(0, 6);
 
 const socialLinks = [
   {
@@ -29,36 +30,27 @@ const socialLinks = [
     icon: Share2
   },
   {
-    href: "https://www.instagram.com/detroitmetromen",
+    href: instagramUrl,
     title: "Detroit Metro Men on Instagram",
     meta: "@detroitmetromen",
     icon: Camera
   }
 ];
 
-const reasons = [
-  {
-    title: "Gather men around a clear call",
-    body: "The event gives men a focused place to step out of routine, hear the Word, and respond with intention.",
-    icon: UsersRound
-  },
-  {
-    title: "Build durable brotherhood",
-    body: "A conference creates shared moments that become easier follow-up conversations, prayer, and accountability.",
-    icon: Sparkles
-  },
-  {
-    title: "Move from attendance to next steps",
-    body: "Registration is not just a headcount; it helps leaders know who to welcome, host, and care for after the weekend.",
-    icon: ArrowRight
-  }
-];
-
 export default function LinkInBioPage() {
   return (
-    <main className="event-shell">
-      <section className="event-page" aria-labelledby="page-title">
-        <div className="event-hero">
+    <main className="event-shell premium-event-shell">
+      <Link className="event-back" href="/" aria-label="Back to FC Men">
+        <ArrowLeft size={21} />
+      </Link>
+
+      <section className="event-launcher" aria-labelledby="page-title">
+        <div className="event-lockup" aria-hidden="true">
+          <span>FC</span>
+        </div>
+        <p className="event-microcopy">Detroit Metro District men gathering June 26-27</p>
+
+        <div className="event-poster">
           <div className="event-art">
             <Image
               src="/fc-men-conference.png"
@@ -69,12 +61,12 @@ export default function LinkInBioPage() {
             />
           </div>
 
-          <div className="event-copy">
+          <div className="event-copy event-card-copy">
             <p className="event-kicker">Detroit Metro District</p>
             <h1 id="page-title">Men&apos;s Conference</h1>
             <p className="event-lead">
-              Two days for men to gather, reset, worship, and leave with real next steps
-              for faith, family, and brotherhood.
+              Two days for men to gather, reset, worship, and leave with real next steps for
+              faith, family, and brotherhood.
             </p>
 
             <div className="event-facts" aria-label="Event details">
@@ -83,93 +75,71 @@ export default function LinkInBioPage() {
                 Jun 26-27, 2026
               </span>
               <span>
-                <Clock size={17} />
-                Friday and Saturday
-              </span>
-              <span>
                 <MapPin size={17} />
                 Detroit Metro District
               </span>
             </div>
 
-            <a className="register-button" href={registrationUrl} rel="noreferrer" target="_blank">
-              Register for the conference
-              <ArrowUpRight size={20} />
+            <a className="event-card-register" href={registrationUrl} rel="noreferrer" target="_blank">
+              <span>Register for the conference</span>
+              <ArrowUpRight size={22} aria-hidden="true" />
             </a>
           </div>
         </div>
 
-        <section className="event-section" aria-labelledby="why-title">
-          <div className="section-heading">
-            <p className="eyebrow">Why this gathering matters</p>
-            <h2 id="why-title">More than a date on the calendar.</h2>
-          </div>
+        <nav className="event-actions" aria-label="FC Men conference links">
+          {socialLinks.map((item) => {
+            const Icon = item.icon;
 
-          <div className="reason-grid">
-            {reasons.map((reason) => {
-              const Icon = reason.icon;
+            return (
+              <a className="event-action" href={item.href} key={item.href} rel="noreferrer" target="_blank">
+                <span className="event-action-icon" aria-hidden="true">
+                  <Icon size={20} />
+                </span>
+                <span>{item.title}</span>
+                <ArrowUpRight size={19} aria-hidden="true" />
+              </a>
+            );
+          })}
+        </nav>
 
-              return (
-                <article className="reason-card" key={reason.title}>
-                  <span className="icon-box" aria-hidden="true">
-                    <Icon size={21} />
-                  </span>
-                  <h3>{reason.title}</h3>
-                  <p>{reason.body}</p>
-                </article>
-              );
-            })}
-          </div>
+        <section className="event-intent" aria-label="Why registration matters">
+          <UsersRound size={20} aria-hidden="true" />
+          <p>
+            Registration helps leaders prepare to welcome each man well, build room for
+            connection, and follow up after the weekend with care instead of guesswork.
+          </p>
         </section>
 
-        <section className="event-section" aria-labelledby="links-title">
-          <div className="section-heading">
-            <p className="eyebrow">Share and follow</p>
-            <h2 id="links-title">Bring someone with you.</h2>
-          </div>
-
-          <nav className="link-list compact-links" aria-label="FC Men external links">
-            <a className="link-button" href={registrationUrl} rel="noreferrer" target="_blank">
-              <span className="icon-box" aria-hidden="true">
-                <CalendarDays size={21} />
-              </span>
-              <span className="link-copy">
-                <span className="link-title">Event Registration</span>
-                <span className="link-meta">Reserve your spot for June 26-27</span>
-              </span>
+        <section className="event-register-call" aria-labelledby="register-call-title">
+          <p className="event-register-date">Friday Jun 26 & Saturday Jun 27</p>
+          <h2 id="register-call-title">Ready to be in the room?</h2>
+          <p>
+            Save your spot now so the team can prepare well and help you take the
+            right next step when you arrive.
+          </p>
+          <div className="event-rsvp-actions">
+            <a className="event-rsvp-pill event-rsvp-primary" href={registrationUrl} rel="noreferrer" target="_blank">
+              Register
               <ArrowUpRight size={20} aria-hidden="true" />
             </a>
-
-            {socialLinks.map((item) => {
-              const Icon = item.icon;
-
-              return (
-                <a
-                  className="link-button"
-                  href={item.href}
-                  key={item.href}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  <span className="icon-box" aria-hidden="true">
-                    <Icon size={21} />
-                  </span>
-                  <span className="link-copy">
-                    <span className="link-title">{item.title}</span>
-                    <span className="link-meta">{item.meta}</span>
-                  </span>
-                  <ArrowUpRight size={20} aria-hidden="true" />
-                </a>
-              );
-            })}
-          </nav>
+            <a className="event-rsvp-pill" href={socialLinks[0].href} rel="noreferrer" target="_blank">
+              Facebook
+            </a>
+            <a className="event-rsvp-pill" href={socialLinks[2].href} rel="noreferrer" target="_blank">
+              Instagram
+            </a>
+          </div>
         </section>
 
-        <Link className="footer-link" href="/">
-          <ArrowLeft size={16} />
-          Back to FC Men
-        </Link>
+        <InstagramMediaGrid
+          instagramUrl={instagramUrl}
+          posts={instagramPosts}
+          username={instagramFeed.user.username}
+        />
       </section>
+
+      <p className="event-secure">Secure registration through Subsplash</p>
     </main>
   );
 }
