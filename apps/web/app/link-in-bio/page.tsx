@@ -15,6 +15,8 @@ import instagramFeed from "@/data/detroitmetromen-instagram-posts.json";
 
 const registrationUrl = "https://subsplash.com/detroitmetrodistrict/lb/ev/+n7t52y4/register";
 const instagramUrl = "https://www.instagram.com/detroitmetromen/";
+const rsvpSampleUrl =
+  "/rsvp?fillId=sample-fill&first=Marcus&last=Jones&email=marcus@example.com&phone=3135550199&ticket=full&type=man&source=link-in-bio";
 const instagramPosts = instagramFeed.posts.slice(0, 6);
 
 const socialLinks = [
@@ -122,6 +124,9 @@ export default function LinkInBioPage() {
             <RegistrationLink className="event-rsvp-pill event-rsvp-primary" desktopHref={registrationUrl}>
               Register
             </RegistrationLink>
+            <Link className="event-rsvp-pill" href={rsvpSampleUrl}>
+              RSVP form
+            </Link>
             <a className="event-rsvp-pill" href={socialLinks[0].href} rel="noreferrer" target="_blank">
               Facebook
             </a>

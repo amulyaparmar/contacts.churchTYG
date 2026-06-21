@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, BookUser, Link2, MessageCircle } from "lucide-react";
+import { ArrowUpRight, BookUser, ClipboardCheck, Link2, MessageCircle } from "lucide-react";
 
 const homeLinks = [
   {
@@ -7,6 +7,12 @@ const homeLinks = [
     title: "FC Men Link in Bio",
     meta: "Event, Facebook, and Instagram links",
     icon: Link2
+  },
+  {
+    href: "/rsvp?fillId=sample-fill&first=Marcus&last=Jones&email=marcus@example.com&phone=3135550199&ticket=full&type=man&source=sms",
+    title: "RSVP FC Men",
+    meta: "Prefilled sample event registration",
+    icon: ClipboardCheck
   },
   {
     href: "/contactbook",
