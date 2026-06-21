@@ -10,9 +10,10 @@ import {
   UsersRound
 } from "lucide-react";
 import { InstagramMediaGrid } from "@/components/instagram-media-grid";
+import { RegistrationLink } from "@/components/registration-link";
 import instagramFeed from "@/data/detroitmetromen-instagram-posts.json";
 
-const registrationUrl = "https://subsplash.com/detroitmetrodistrict/lb/ev/+n7t52y4";
+const registrationUrl = "https://subsplash.com/detroitmetrodistrict/lb/ev/+n7t52y4/register";
 const instagramUrl = "https://www.instagram.com/detroitmetromen/";
 const instagramPosts = instagramFeed.posts.slice(0, 6);
 
@@ -80,10 +81,9 @@ export default function LinkInBioPage() {
               </span>
             </div>
 
-            <a className="event-card-register" href={registrationUrl} rel="noreferrer" target="_blank">
+            <RegistrationLink className="event-card-register" desktopHref={registrationUrl}>
               <span>Register for the conference</span>
-              <ArrowUpRight size={22} aria-hidden="true" />
-            </a>
+            </RegistrationLink>
           </div>
         </div>
 
@@ -119,10 +119,9 @@ export default function LinkInBioPage() {
             right next step when you arrive.
           </p>
           <div className="event-rsvp-actions">
-            <a className="event-rsvp-pill event-rsvp-primary" href={registrationUrl} rel="noreferrer" target="_blank">
+            <RegistrationLink className="event-rsvp-pill event-rsvp-primary" desktopHref={registrationUrl}>
               Register
-              <ArrowUpRight size={20} aria-hidden="true" />
-            </a>
+            </RegistrationLink>
             <a className="event-rsvp-pill" href={socialLinks[0].href} rel="noreferrer" target="_blank">
               Facebook
             </a>
