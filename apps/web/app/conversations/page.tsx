@@ -20,7 +20,7 @@ const suggestedBlasts: SmsBlast[] = [
     status: "draft",
     message: "Reminder: FC Men is coming up. Reply YES if you want the registration link again.",
     estimatedRecipients: null,
-    createdAt: "2026-06-24T00:00:00.000Z",
+    createdAt: "2026-06-24T16:00:00.000Z",
     sentAt: null
   },
   {
@@ -31,7 +31,7 @@ const suggestedBlasts: SmsBlast[] = [
     status: "draft",
     message: "Hey! Want to join the next Detroit Metro Men gathering? Reply YES and we will send the details.",
     estimatedRecipients: null,
-    createdAt: "2026-06-24T00:00:00.000Z",
+    createdAt: "2026-06-24T16:00:00.000Z",
     sentAt: null
   },
   {
@@ -42,7 +42,7 @@ const suggestedBlasts: SmsBlast[] = [
     status: "draft",
     message: "Thanks for connecting with Detroit Metro Men. What is the best next step for you right now?",
     estimatedRecipients: null,
-    createdAt: "2026-06-24T00:00:00.000Z",
+    createdAt: "2026-06-24T16:00:00.000Z",
     sentAt: null
   }
 ];

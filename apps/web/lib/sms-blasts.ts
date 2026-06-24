@@ -127,7 +127,10 @@ export async function listSmsBlasts() {
     return {
       blasts: [] as SmsBlast[],
       source: "fallback" as const,
-      error: `Could not read ${SMS_BLASTS_TABLE} (${response.status}).`
+      error:
+        response.status === 404
+          ? "sms_blasts is not available yet, so starter drafts are showing."
+          : `Could not read ${SMS_BLASTS_TABLE} (${response.status}).`
     };
   }
 
