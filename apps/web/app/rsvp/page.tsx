@@ -159,7 +159,38 @@ export default async function RsvpPage({ searchParams }: RsvpPageProps) {
           </div>
         </section>
 
-        <form className="rsvp-form">
+        <section className="rsvp-section" aria-labelledby="primary-title">
+          <div className="rsvp-section-heading">
+            <h2 id="primary-title">Who&apos;s your primary contact? *</h2>
+            <p>
+              This is the main point of contact for your group. URL details can prefill
+              this so leaders know who invited or followed up.
+            </p>
+          </div>
+
+          <div className="rsvp-primary-contact">
+            <UserRound size={22} />
+            <span>
+              <strong>{primaryName}</strong>
+              <span>{primaryEmail}</span>
+            </span>
+          </div>
+
+          <div className="rsvp-primary-contact rsvp-muted-contact">
+            <CirclePlus size={22} />
+            <span>
+              <strong>Somebody else</strong>
+              <span>Add a different primary contact</span>
+            </span>
+          </div>
+        </section>
+
+        <form className="rsvp-form" aria-labelledby="details-title">
+          <div className="rsvp-section-heading">
+            <h2 id="details-title">Your details</h2>
+            <p>Confirm the attendee information before review and payment.</p>
+          </div>
+
           <input name="fillId" type="hidden" value={fillId} />
           <input name="source" type="hidden" value={source} />
 
@@ -207,32 +238,6 @@ export default async function RsvpPage({ searchParams }: RsvpPageProps) {
             Add another person
           </button>
         </form>
-
-        <section className="rsvp-section" aria-labelledby="primary-title">
-          <div className="rsvp-section-heading">
-            <h2 id="primary-title">Who&apos;s your primary contact? *</h2>
-            <p>
-              This is the main point of contact for your group. URL details can prefill
-              this so leaders know who invited or followed up.
-            </p>
-          </div>
-
-          <div className="rsvp-primary-contact">
-            <UserRound size={22} />
-            <span>
-              <strong>{primaryName}</strong>
-              <span>{primaryEmail}</span>
-            </span>
-          </div>
-
-          <div className="rsvp-primary-contact rsvp-muted-contact">
-            <CirclePlus size={22} />
-            <span>
-              <strong>Somebody else</strong>
-              <span>Add a different primary contact</span>
-            </span>
-          </div>
-        </section>
 
         <section className="rsvp-review" aria-labelledby="review-title">
           <h2 id="review-title">Review & pay</h2>
