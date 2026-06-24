@@ -16,6 +16,7 @@ export async function POST(request: Request) {
     const title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : "Detroit Metro Men SMS blast";
     const message = typeof body.message === "string" ? body.message.trim() : "";
     const requestedStatus = typeof body.status === "string" ? body.status.trim().toLowerCase() : "";
+    const scheduledAt = typeof body.scheduledAt === "string" && body.scheduledAt.trim() ? body.scheduledAt.trim() : null;
     const status: SmsBlastStatus = requestedStatus === "draft" ? "draft" : "queued";
     const dryRun = body.dryRun === true;
 
@@ -32,7 +33,8 @@ export async function POST(request: Request) {
       title,
       message,
       audience: "@detroitmetromen contacts",
-      status
+      status,
+      scheduledAt
     });
 
     return NextResponse.json({ blast }, { status: 201 });

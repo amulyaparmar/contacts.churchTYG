@@ -7,9 +7,10 @@ import {
   MessageSquareText,
   Save,
   Send,
+  Trash2,
   UsersRound
 } from "lucide-react";
-import { queueSmsBlast, saveSmsBlastDraft } from "./actions";
+import { deleteSavedSmsBlast, queueSmsBlast, saveSmsBlastDraft, scheduleSmsBlast, sendSavedSmsBlast } from "./actions";
 import { listSmsBlasts, type SmsBlast } from "@/lib/sms-blasts";
 
 const suggestedBlasts: SmsBlast[] = [
@@ -23,6 +24,7 @@ const suggestedBlasts: SmsBlast[] = [
     estimatedRecipients: null,
     createdAt: "2026-06-24T16:00:00.000Z",
     sentAt: null,
+    scheduledAt: null,
     errorMessage: null
   },
   {
@@ -35,6 +37,7 @@ const suggestedBlasts: SmsBlast[] = [
     estimatedRecipients: null,
     createdAt: "2026-06-24T16:00:00.000Z",
     sentAt: null,
+    scheduledAt: null,
     errorMessage: null
   },
   {
@@ -47,6 +50,7 @@ const suggestedBlasts: SmsBlast[] = [
     estimatedRecipients: null,
     createdAt: "2026-06-24T16:00:00.000Z",
     sentAt: null,
+    scheduledAt: null,
     errorMessage: null
   }
 ];
@@ -60,9 +64,21 @@ const statusCopy: Record<string, { tone: "success" | "warning"; text: string }> 
     tone: "success",
     text: "Blast sent to eligible @detroitmetromen contacts."
   },
+  "sent-existing": {
+    tone: "success",
+    text: "Saved blast sent to eligible @detroitmetromen contacts."
+  },
   draft: {
     tone: "success",
     text: "Draft saved in sms_blasts."
+  },
+  scheduled: {
+    tone: "success",
+    text: "Blast scheduled. The cron checks due queued blasts every 30 minutes."
+  },
+  deleted: {
+    tone: "success",
+    text: "Blast deleted from sms_blasts."
   },
   "message-too-short": {
     tone: "warning",
@@ -75,6 +91,14 @@ const statusCopy: Record<string, { tone: "success" | "warning"; text: string }> 
   "send-failed": {
     tone: "warning",
     text: "The blast was saved, but no messages were delivered."
+  },
+  "delete-failed": {
+    tone: "warning",
+    text: "Could not delete the blast."
+  },
+  "schedule-failed": {
+    tone: "warning",
+    text: "Could not schedule the blast."
   }
 };
 
@@ -101,6 +125,7 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
   const status = getStatus(params);
   const result = await listSmsBlasts();
   const blasts = result.blasts.length > 0 ? result.blasts : suggestedBlasts;
+  const hasDatabaseBlasts = result.source === "sms_blasts";
 
   return (
     <main className="shell blast-shell">
@@ -171,10 +196,19 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
               </span>
             </div>
 
+            <label>
+              <span>Schedule time</span>
+              <input name="scheduledAt" type="datetime-local" />
+            </label>
+
             <div className="blast-button-row">
               <button className="blast-secondary-button" type="submit" formAction={saveSmsBlastDraft}>
                 <Save size={16} />
                 Save draft
+              </button>
+              <button className="blast-secondary-button" type="submit" formAction={scheduleSmsBlast}>
+                <CalendarClock size={16} />
+                Schedule
               </button>
               <button className="blast-send-button" type="submit" formAction={queueSmsBlast}>
                 <Send size={16} />
@@ -186,7 +220,10 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
           <div className="stack-list blast-list" aria-label="SMS blasts">
             {blasts.map((blast) => {
               const isSent = blast.status === "sent";
+              const isScheduled = blast.status === "queued" && Boolean(blast.scheduledAt);
+              const canSendExisting = hasDatabaseBlasts && !isSent;
               const Icon = isSent ? CheckCircle2 : blast.status === "queued" ? Send : CalendarClock;
+              const statusLabel = isSent ? "Sent" : isScheduled ? "Scheduled" : blast.status === "queued" ? "Queued" : "Draft";
 
               return (
                 <article className="data-row" key={blast.id}>
@@ -195,14 +232,14 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
                       <div className="row-title">{blast.title}</div>
                       <div className="row-meta">{blast.audience}</div>
                     </div>
-                    <span className="pill">{blast.status}</span>
+                    <span className="pill">{statusLabel.toLowerCase()}</span>
                   </div>
                   <div className="row-body">{blast.message}</div>
                   {blast.errorMessage ? <div className="row-error">{blast.errorMessage}</div> : null}
                   <div className="mini-actions">
                     <span className="mini-action">
                       <Icon size={15} />
-                      {isSent ? "Sent" : blast.status === "queued" ? "Queued" : "Draft"}
+                      {statusLabel}
                     </span>
                     <span className="mini-action">
                       <UsersRound size={15} />
@@ -210,8 +247,26 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
                     </span>
                     <span className="mini-action">
                       <CalendarClock size={15} />
-                      {formatBlastDate(blast.sentAt ?? blast.createdAt)}
+                      {formatBlastDate(blast.sentAt ?? blast.scheduledAt ?? blast.createdAt)}
                     </span>
+                    {canSendExisting ? (
+                      <form action={sendSavedSmsBlast}>
+                        <input type="hidden" name="blastId" value={blast.id} />
+                        <button className="mini-action mini-action-button" type="submit">
+                          <Send size={15} />
+                          Send now
+                        </button>
+                      </form>
+                    ) : null}
+                    {hasDatabaseBlasts ? (
+                      <form action={deleteSavedSmsBlast}>
+                        <input type="hidden" name="blastId" value={blast.id} />
+                        <button className="mini-action mini-action-button mini-action-danger" type="submit">
+                          <Trash2 size={15} />
+                          Delete
+                        </button>
+                      </form>
+                    ) : null}
                   </div>
                 </article>
               );

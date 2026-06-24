@@ -17,6 +17,7 @@ export type SmsBlast = {
   estimatedRecipients: number | null;
   createdAt: string;
   sentAt: string | null;
+  scheduledAt: string | null;
   errorMessage: string | null;
 };
 
@@ -25,6 +26,7 @@ export type CreateSmsBlastInput = {
   message: string;
   audience?: string;
   status?: SmsBlastStatus;
+  scheduledAt?: string | null;
 };
 
 const SMS_BLASTS_TABLE = "sms_blasts";
@@ -364,6 +366,7 @@ function normalizeSmsBlast(row: JsonRecord): SmsBlast {
       pickNumber(metadata, ["estimatedRecipients", "recipientCount"]),
     createdAt: pickString(row, ["created_at", "createdAt"]) || new Date().toISOString(),
     sentAt: pickString(row, ["sent_at", "sentAt", "queued_at", "queuedAt"]) || null,
+    scheduledAt: pickString(row, ["scheduled_at", "scheduledAt"]) || null,
     errorMessage: pickString(row, ["error_message", "errorMessage"]) || null
   };
 }
@@ -524,6 +527,46 @@ async function updateSmsBlast(config: { url: string; key: string }, id: string, 
   return rows[0] ?? patch;
 }
 
+async function getSmsBlastRow(config: { url: string; key: string }, id: string) {
+  const response = await fetch(
+    `${config.url}/rest/v1/${encodeURIComponent(SMS_BLASTS_TABLE)}?id=eq.${encodeURIComponent(id)}&select=*&limit=1`,
+    {
+      headers: supabaseHeaders(config),
+      cache: "no-store"
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Could not read sms_blasts row (${response.status}).`);
+  }
+
+  const rows = await parseSupabaseResponse(response);
+  const row = rows[0];
+  if (!row) {
+    throw new Error("SMS blast was not found.");
+  }
+
+  return row;
+}
+
+export async function deleteSmsBlast(id: string) {
+  const config = getSupabaseConfig();
+  if (!config) {
+    throw new Error("Supabase is not configured for sms_blasts.");
+  }
+
+  const response = await fetch(`${config.url}/rest/v1/${encodeURIComponent(SMS_BLASTS_TABLE)}?id=eq.${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: supabaseHeaders(config),
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Could not delete sms_blasts row (${response.status}): ${detail.slice(0, 180)}`);
+  }
+}
+
 async function deliverAndUpdateSmsBlast(config: { url: string; key: string }, row: JsonRecord, message: string) {
   const id = pickString(row, ["id"]);
   if (!id) return row;
@@ -548,6 +591,7 @@ async function deliverAndUpdateSmsBlast(config: { url: string; key: string }, ro
       estimated_recipients: delivery.attempted,
       sent_at: status === "sent" ? now : null,
       failed_at: status === "failed" ? now : null,
+      scheduled_at: null,
       error_message: errorMessage,
       metadata: {
         ...existingMetadata,
@@ -558,6 +602,7 @@ async function deliverAndUpdateSmsBlast(config: { url: string; key: string }, ro
     return updateSmsBlast(config, id, {
       status: "failed",
       failed_at: now,
+      scheduled_at: null,
       error_message: error instanceof Error ? error.message : "Could not send SMS blast.",
       metadata: {
         ...existingMetadata,
@@ -574,6 +619,88 @@ async function deliverAndUpdateSmsBlast(config: { url: string; key: string }, ro
       }
     });
   }
+}
+
+export async function sendExistingSmsBlast(id: string) {
+  const config = getSupabaseConfig();
+  if (!config) {
+    throw new Error("Supabase is not configured for sms_blasts.");
+  }
+
+  const row = await getSmsBlastRow(config, id);
+  const message = pickString(row, ["message", "body", "text", "content"]);
+  if (message.length < 8) {
+    throw new Error("Message must be at least 8 characters before sending.");
+  }
+
+  const queuedAt = new Date().toISOString();
+  const queuedRow = await updateSmsBlast(config, id, {
+    status: "queued",
+    queued_at: queuedAt,
+    failed_at: null,
+    error_message: null
+  });
+
+  return normalizeSmsBlast(await deliverAndUpdateSmsBlast(config, queuedRow, message));
+}
+
+export async function processDueSmsBlasts(limit = 20) {
+  const config = getSupabaseConfig();
+  if (!config) {
+    throw new Error("Supabase is not configured for sms_blasts.");
+  }
+
+  const now = new Date().toISOString();
+  const query = new URLSearchParams({
+    select: "*",
+    status: "eq.queued",
+    scheduled_at: `lte.${now}`,
+    sent_at: "is.null",
+    order: "scheduled_at.asc",
+    limit: String(limit)
+  });
+
+  const response = await fetch(`${config.url}/rest/v1/${encodeURIComponent(SMS_BLASTS_TABLE)}?${query.toString()}`, {
+    headers: supabaseHeaders(config),
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not read due sms_blasts rows (${response.status}).`);
+  }
+
+  const rows = await parseSupabaseResponse(response);
+  const results = [];
+
+  for (const row of rows) {
+    const message = pickString(row, ["message", "body", "text", "content"]);
+    const id = pickString(row, ["id"]);
+
+    if (!id || message.length < 8) {
+      results.push({
+        id,
+        status: "failed",
+        error: "Message must be at least 8 characters before sending."
+      });
+      continue;
+    }
+
+    const blast = normalizeSmsBlast(await deliverAndUpdateSmsBlast(config, row, message));
+    results.push({
+      id: blast.id,
+      status: blast.status,
+      sentAt: blast.sentAt,
+      errorMessage: blast.errorMessage
+    });
+  }
+
+  return {
+    checkedAt: now,
+    due: rows.length,
+    sent: results.filter((result) => result.status === "sent").length,
+    failed: results.filter((result) => result.status === "failed").length,
+    results
+  };
 }
 
 export async function listSmsBlasts() {
@@ -622,6 +749,7 @@ export async function createSmsBlast(input: CreateSmsBlastInput) {
   }
 
   const now = new Date().toISOString();
+  const scheduledAt = input.scheduledAt?.trim() || null;
   const row: JsonRecord = {
     title: input.title,
     audience: input.audience ?? DEFAULT_AUDIENCE,
@@ -633,12 +761,17 @@ export async function createSmsBlast(input: CreateSmsBlastInput) {
       audienceHandle: "@detroitmetromen",
       contactSource: "contactsTYG",
       source: "contacts.church/conversations",
-      savedAs: input.status ?? "queued"
+      savedAs: input.status ?? "queued",
+      ...(scheduledAt ? { scheduledAt } : {})
     }
   };
 
   if ((input.status ?? "queued") === "queued") {
     row.queued_at = now;
+  }
+
+  if (scheduledAt) {
+    row.scheduled_at = scheduledAt;
   }
 
   const response = await fetch(`${config.url}/rest/v1/${encodeURIComponent(SMS_BLASTS_TABLE)}`, {
@@ -662,6 +795,7 @@ export async function createSmsBlast(input: CreateSmsBlastInput) {
     : isRecord(payload)
       ? payload
       : row;
-  const finalRow = (input.status ?? "queued") === "queued" ? await deliverAndUpdateSmsBlast(config, created, input.message) : created;
+  const shouldDeliverNow = (input.status ?? "queued") === "queued" && !scheduledAt;
+  const finalRow = shouldDeliverNow ? await deliverAndUpdateSmsBlast(config, created, input.message) : created;
   return normalizeSmsBlast(finalRow);
 }
