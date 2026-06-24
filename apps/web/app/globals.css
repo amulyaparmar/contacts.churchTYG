@@ -3076,7 +3076,14 @@ h1 {
   font-weight: 680;
 }
 
-.blast-send-button {
+.blast-button-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.blast-send-button,
+.blast-secondary-button {
   display: inline-flex;
   min-height: 44px;
   align-items: center;
@@ -3091,8 +3098,19 @@ h1 {
   font-weight: 800;
 }
 
+.blast-secondary-button {
+  border-color: rgba(25, 21, 15, 0.14);
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--ink);
+}
+
 .blast-send-button:hover {
   background: #184f49;
+}
+
+.blast-secondary-button:hover {
+  border-color: rgba(29, 95, 88, 0.28);
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .blast-list {

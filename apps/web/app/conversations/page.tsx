@@ -5,10 +5,11 @@ import {
   CheckCircle2,
   Database,
   MessageSquareText,
+  Save,
   Send,
   UsersRound
 } from "lucide-react";
-import { queueSmsBlast } from "./actions";
+import { queueSmsBlast, saveSmsBlastDraft } from "./actions";
 import { listSmsBlasts, type SmsBlast } from "@/lib/sms-blasts";
 
 const suggestedBlasts: SmsBlast[] = [
@@ -52,13 +53,17 @@ const statusCopy: Record<string, { tone: "success" | "warning"; text: string }> 
     tone: "success",
     text: "Blast queued in sms_blasts."
   },
+  draft: {
+    tone: "success",
+    text: "Draft saved in sms_blasts."
+  },
   "message-too-short": {
     tone: "warning",
     text: "Write a little more before sending the blast."
   },
-  "queue-failed": {
+  "save-failed": {
     tone: "warning",
-    text: "Could not queue the blast. Check the sms_blasts table and Supabase credentials."
+    text: "Could not save the blast. Check the sms_blasts table and Supabase credentials."
   }
 };
 
@@ -155,10 +160,16 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
               </span>
             </div>
 
-            <button className="blast-send-button" type="submit">
-              <Send size={16} />
-              Send blast
-            </button>
+            <div className="blast-button-row">
+              <button className="blast-secondary-button" type="submit" formAction={saveSmsBlastDraft}>
+                <Save size={16} />
+                Save draft
+              </button>
+              <button className="blast-send-button" type="submit" formAction={queueSmsBlast}>
+                <Send size={16} />
+                Send blast
+              </button>
+            </div>
           </form>
 
           <div className="stack-list blast-list" aria-label="SMS blasts">

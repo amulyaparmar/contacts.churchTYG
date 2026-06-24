@@ -158,13 +158,17 @@ export async function createSmsBlast(input: CreateSmsBlastInput) {
     status: input.status ?? "queued",
     message: input.message,
     created_at: now,
-    queued_at: now,
     metadata: {
       audienceHandle: "@detroitmetromen",
       contactSource: "contactsTYG",
-      source: "contacts.church/conversations"
+      source: "contacts.church/conversations",
+      savedAs: input.status ?? "queued"
     }
   };
+
+  if ((input.status ?? "queued") === "queued") {
+    row.queued_at = now;
+  }
 
   const response = await fetch(`${config.url}/rest/v1/${encodeURIComponent(SMS_BLASTS_TABLE)}`, {
     method: "POST",
@@ -178,7 +182,7 @@ export async function createSmsBlast(input: CreateSmsBlastInput) {
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`Could not queue sms_blasts row (${response.status}): ${detail.slice(0, 180)}`);
+    throw new Error(`Could not save sms_blasts row (${response.status}): ${detail.slice(0, 180)}`);
   }
 
   const payload: unknown = await response.json();
