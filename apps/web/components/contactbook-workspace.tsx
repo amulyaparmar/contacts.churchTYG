@@ -84,6 +84,53 @@ function escapeHtml(value: string) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
+function escapeCsvValue(value: string | number | boolean | null | undefined) {
+  const serialized = String(value ?? "");
+  if (!/[",\n\r]/.test(serialized)) return serialized;
+
+  return `"${serialized.replaceAll('"', '""')}"`;
+}
+
+function buildContactsCsv(contacts: Contact[]) {
+  const headers = [
+    "Name",
+    "Phone",
+    "First",
+    "Last",
+    "Email",
+    "Role",
+    "LinkedIn",
+    "Fill ID",
+    "Stage",
+    "Source",
+    "Last touch",
+    "Next action",
+    "KPI status",
+    "Tags",
+    "Notes"
+  ];
+
+  const rows = contacts.map((contact) => [
+    getGridValue(contact, "name"),
+    getGridValue(contact, "phone"),
+    getGridValue(contact, "firstName"),
+    getGridValue(contact, "lastName"),
+    getGridValue(contact, "email"),
+    getGridValue(contact, "role"),
+    getGridValue(contact, "linkedin"),
+    contact.fillId,
+    stageLabels[contact.stage],
+    contact.source,
+    contact.lastTouchAt,
+    contact.nextAction,
+    contact.kpiStatus,
+    contact.tags.join("; "),
+    contact.notes
+  ]);
+
+  return [headers, ...rows].map((row) => row.map(escapeCsvValue).join(",")).join("\n");
+}
+
 function buildSmsHref(contact: Contact, body: string) {
   const phone = contact.phone.replace(/\s+/g, "");
   return `sms:${phone}?&body=${encodeURIComponent(body)}`;
@@ -663,6 +710,27 @@ export function ContactbookWorkspace() {
     setState((current) => recordContactActivity(current, event));
   }
 
+  function handleExportContacts() {
+    if (visibleContacts.length === 0) {
+      setQueueStatus("No contacts to export for this view.");
+      return;
+    }
+
+    const csv = buildContactsCsv(visibleContacts);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeViewName = selectedView.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+    link.href = url;
+    link.download = `fc-men-${safeViewName || "contacts"}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setQueueStatus(`Exported ${visibleContacts.length} contact${visibleContacts.length === 1 ? "" : "s"} to CSV.`);
+  }
+
   async function handlePullAll() {
     try {
       setPulling(true);
@@ -744,7 +812,12 @@ export function ContactbookWorkspace() {
               <Upload size={15} />
               Import
             </button>
-            <button className="email-secondary-button" disabled type="button">
+            <button
+              className="email-secondary-button"
+              disabled={visibleContacts.length === 0}
+              onClick={handleExportContacts}
+              type="button"
+            >
               <Download size={15} />
               Export
             </button>
