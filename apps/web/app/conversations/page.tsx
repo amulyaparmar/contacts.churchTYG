@@ -1,81 +1,199 @@
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Clock3, MessageCircle, Send } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarClock,
+  CheckCircle2,
+  Database,
+  MessageSquareText,
+  Send,
+  UsersRound
+} from "lucide-react";
+import { queueSmsBlast } from "./actions";
+import { listSmsBlasts, type SmsBlast } from "@/lib/sms-blasts";
 
-const conversations = [
+const suggestedBlasts: SmsBlast[] = [
   {
-    title: "Event reminder sequence",
-    person: "Registered attendees",
-    status: "Draft",
-    note: "Send a short reminder with time, location, and what to bring.",
-    icon: Send
+    id: "conference-reminder",
+    title: "Conference reminder",
+    audience: "@detroitmetromen contacts",
+    channel: "sms",
+    status: "draft",
+    message: "Reminder: FC Men is coming up. Reply YES if you want the registration link again.",
+    estimatedRecipients: null,
+    createdAt: "2026-06-24T00:00:00.000Z",
+    sentAt: null
   },
   {
-    title: "First-time guest check-in",
-    person: "New FC Men contacts",
-    status: "Due today",
-    note: "Ask how the event landed and offer one concrete next step.",
-    icon: Clock3
+    id: "rsvp-nudge",
+    title: "RSVP nudge",
+    audience: "@detroitmetromen contacts",
+    channel: "sms",
+    status: "draft",
+    message: "Hey! Want to join the next Detroit Metro Men gathering? Reply YES and we will send the details.",
+    estimatedRecipients: null,
+    createdAt: "2026-06-24T00:00:00.000Z",
+    sentAt: null
   },
   {
-    title: "Volunteer thank-you",
-    person: "Serve team",
-    status: "Ready",
-    note: "Send appreciation and capture feedback while details are fresh.",
-    icon: CheckCircle2
+    id: "follow-up",
+    title: "Post-event follow-up",
+    audience: "@detroitmetromen contacts",
+    channel: "sms",
+    status: "draft",
+    message: "Thanks for connecting with Detroit Metro Men. What is the best next step for you right now?",
+    estimatedRecipients: null,
+    createdAt: "2026-06-24T00:00:00.000Z",
+    sentAt: null
   }
 ];
 
-export default function ConversationsPage() {
+const statusCopy: Record<string, { tone: "success" | "warning"; text: string }> = {
+  queued: {
+    tone: "success",
+    text: "Blast queued in sms_blasts."
+  },
+  "message-too-short": {
+    tone: "warning",
+    text: "Write a little more before sending the blast."
+  },
+  "queue-failed": {
+    tone: "warning",
+    text: "Could not queue the blast. Check the sms_blasts table and Supabase credentials."
+  }
+};
+
+type ConversationsPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function formatBlastDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function getStatus(searchParams: Record<string, string | string[] | undefined>) {
+  const status = searchParams.status;
+  return typeof status === "string" ? statusCopy[status] : null;
+}
+
+export default async function ConversationsPage({ searchParams }: ConversationsPageProps) {
+  const params = searchParams ? await searchParams : {};
+  const status = getStatus(params);
+  const result = await listSmsBlasts();
+  const blasts = result.blasts.length > 0 ? result.blasts : suggestedBlasts;
+
   return (
-    <main className="shell">
-      <section className="hub" aria-labelledby="page-title">
+    <main className="shell blast-shell">
+      <section className="hub blast-hub" aria-labelledby="page-title">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">
-            <MessageCircle size={30} strokeWidth={2.2} />
+            <MessageSquareText size={30} strokeWidth={2.2} />
           </div>
           <p className="eyebrow">FC Men</p>
-          <h1 id="page-title">Conversations</h1>
-          <p className="lead">A dedicated conversation workspace for FC Men.</p>
+          <h1 id="page-title">SMS blasts</h1>
+          <p className="lead">
+            Send one clean text blast to the Detroit Metro Men contact audience.
+          </p>
         </div>
 
-        <div className="stat-grid" aria-label="Conversation overview">
+        <div className="stat-grid" aria-label="Blast overview">
           <div className="stat">
-            <span className="stat-value">3</span>
-            <span className="stat-label">flows</span>
+            <span className="stat-value">{blasts.length}</span>
+            <span className="stat-label">blasts</span>
           </div>
           <div className="stat">
-            <span className="stat-value">1</span>
-            <span className="stat-label">due today</span>
+            <span className="stat-value">@</span>
+            <span className="stat-label">detroitmetromen</span>
           </div>
           <div className="stat">
-            <span className="stat-value">2</span>
-            <span className="stat-label">ready</span>
+            <span className="stat-value">SMS</span>
+            <span className="stat-label">{result.source === "sms_blasts" ? "sms_blasts" : "draft mode"}</span>
           </div>
         </div>
 
-        <div className="stack-list">
-          {conversations.map((conversation) => {
-            const Icon = conversation.icon;
+        {status ? <div className={`blast-alert blast-alert-${status.tone}`}>{status.text}</div> : null}
+        {result.error ? <div className="blast-alert blast-alert-warning">{result.error}</div> : null}
 
-            return (
-              <article className="data-row" key={conversation.title}>
-                <div className="row-top">
-                  <div className="row-copy">
-                    <div className="row-title">{conversation.title}</div>
-                    <div className="row-meta">{conversation.person}</div>
+        <div className="blast-layout">
+          <form className="blast-compose" action={queueSmsBlast}>
+            <div className="blast-compose-head">
+              <div>
+                <p className="eyebrow">Send blast</p>
+                <h2>Message @detroitmetromen contacts</h2>
+              </div>
+              <Send size={22} aria-hidden="true" />
+            </div>
+
+            <label>
+              <span>Blast name</span>
+              <input name="title" defaultValue="Detroit Metro Men update" maxLength={80} />
+            </label>
+
+            <label>
+              <span>Text message</span>
+              <textarea
+                name="message"
+                rows={7}
+                maxLength={480}
+                required
+                defaultValue="Hey! Quick Detroit Metro Men update: "
+              />
+            </label>
+
+            <div className="blast-compose-meta">
+              <span>
+                <UsersRound size={15} />
+                Audience: @detroitmetromen contacts
+              </span>
+              <span>
+                <Database size={15} />
+                Saves to sms_blasts
+              </span>
+            </div>
+
+            <button className="blast-send-button" type="submit">
+              <Send size={16} />
+              Send blast
+            </button>
+          </form>
+
+          <div className="stack-list blast-list" aria-label="SMS blasts">
+            {blasts.map((blast) => {
+              const isSent = blast.status === "sent";
+              const Icon = isSent ? CheckCircle2 : blast.status === "queued" ? Send : CalendarClock;
+
+              return (
+                <article className="data-row" key={blast.id}>
+                  <div className="row-top">
+                    <div className="row-copy">
+                      <div className="row-title">{blast.title}</div>
+                      <div className="row-meta">{blast.audience}</div>
+                    </div>
+                    <span className="pill">{blast.status}</span>
                   </div>
-                  <span className="pill">{conversation.status}</span>
-                </div>
-                <div className="row-body">{conversation.note}</div>
-                <div className="mini-actions">
-                  <span className="mini-action">
-                    <Icon size={15} />
-                    Open flow
-                  </span>
-                </div>
-              </article>
-            );
-          })}
+                  <div className="row-body">{blast.message}</div>
+                  <div className="mini-actions">
+                    <span className="mini-action">
+                      <Icon size={15} />
+                      {isSent ? "Sent" : blast.status === "queued" ? "Queued" : "Draft"}
+                    </span>
+                    <span className="mini-action">
+                      <UsersRound size={15} />
+                      {blast.estimatedRecipients === null ? "Audience pending" : `${blast.estimatedRecipients} contacts`}
+                    </span>
+                    <span className="mini-action">
+                      <CalendarClock size={15} />
+                      {formatBlastDate(blast.sentAt ?? blast.createdAt)}
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </div>
 
         <Link className="footer-link" href="/">
