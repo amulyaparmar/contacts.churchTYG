@@ -2305,6 +2305,7 @@ h1 {
     transform 160ms ease,
     border-color 160ms ease,
     background 160ms ease,
+    opacity 160ms ease,
     box-shadow 160ms ease;
 }
 
@@ -2313,6 +2314,15 @@ h1 {
   border-color: rgba(29, 95, 88, 0.38);
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 24px 58px rgba(22, 20, 17, 0.12);
+}
+
+.link-button-example {
+  margin-top: 8px;
+  opacity: 0.56;
+}
+
+.link-button-example:hover {
+  opacity: 0.78;
 }
 
 .icon-box {
@@ -2325,14 +2335,19 @@ h1 {
   color: var(--accent);
 }
 
-.link-button:nth-child(2) .icon-box {
+.link-button-red .icon-box {
   background: rgba(185, 68, 47, 0.1);
   color: var(--accent-2);
 }
 
-.link-button:nth-child(3) .icon-box {
+.link-button-gold .icon-box {
   background: rgba(215, 174, 87, 0.16);
   color: #866015;
+}
+
+.link-button-green .icon-box {
+  background: rgba(29, 95, 88, 0.1);
+  color: var(--accent);
 }
 
 .link-copy {

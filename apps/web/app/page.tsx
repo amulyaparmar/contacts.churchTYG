@@ -3,28 +3,34 @@ import { ArrowUpRight, BookUser, ClipboardCheck, Link2, MessageCircle } from "lu
 
 const homeLinks = [
   {
-    href: "/link-in-bio",
-    title: "FC Men Link in Bio",
-    meta: "Event, Facebook, and Instagram links",
-    icon: Link2
-  },
-  {
-    href: "/rsvp?fillId=sample-fill&first=Marcus&last=Jones&email=marcus@example.com&phone=3135550199&ticket=full&type=man&source=sms",
-    title: "RSVP FC Men",
-    meta: "Prefilled sample event registration",
-    icon: ClipboardCheck
-  },
-  {
     href: "/contactbook",
     title: "Contactbook FC Men",
     meta: "A home for FC Men contacts",
-    icon: BookUser
+    icon: BookUser,
+    tone: "gold"
   },
   {
     href: "/conversations",
     title: "Conversations FC Men",
     meta: "Conversation tools and follow-up space",
-    icon: MessageCircle
+    icon: MessageCircle,
+    tone: "green"
+  },
+  {
+    href: "/link-in-bio",
+    title: "Example Link in Bio",
+    meta: "Event, Facebook, and Instagram links",
+    icon: Link2,
+    tone: "green",
+    variant: "example"
+  },
+  {
+    href: "/rsvp?fillId=sample-fill&first=Marcus&last=Jones&email=marcus@example.com&phone=3135550199&ticket=full&type=man&source=sms",
+    title: "Example RSVP Men",
+    meta: "Prefilled sample event registration",
+    icon: ClipboardCheck,
+    tone: "red",
+    variant: "example"
   }
 ];
 
@@ -39,7 +45,7 @@ export default function Home() {
           <p className="eyebrow">contacts.church</p>
           <h1 id="page-title">FC Men</h1>
           <p className="lead">
-            Quick access for the FC Men link hub, contactbook, and conversations.
+            Quick access for the FC Men contactbook and conversations. Examples live below.
           </p>
         </div>
 
@@ -48,7 +54,13 @@ export default function Home() {
             const Icon = item.icon;
 
             return (
-              <Link className="link-button" href={item.href} key={item.href}>
+              <Link
+                className={`link-button link-button-${item.tone} ${
+                  item.variant === "example" ? "link-button-example" : ""
+                }`}
+                href={item.href}
+                key={item.href}
+              >
                 <span className="icon-box" aria-hidden="true">
                   <Icon size={21} />
                 </span>
