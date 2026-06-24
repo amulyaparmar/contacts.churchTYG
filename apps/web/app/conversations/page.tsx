@@ -22,7 +22,8 @@ const suggestedBlasts: SmsBlast[] = [
     message: "Reminder: FC Men is coming up. Reply YES if you want the registration link again.",
     estimatedRecipients: null,
     createdAt: "2026-06-24T16:00:00.000Z",
-    sentAt: null
+    sentAt: null,
+    errorMessage: null
   },
   {
     id: "rsvp-nudge",
@@ -33,7 +34,8 @@ const suggestedBlasts: SmsBlast[] = [
     message: "Hey! Want to join the next Detroit Metro Men gathering? Reply YES and we will send the details.",
     estimatedRecipients: null,
     createdAt: "2026-06-24T16:00:00.000Z",
-    sentAt: null
+    sentAt: null,
+    errorMessage: null
   },
   {
     id: "follow-up",
@@ -44,14 +46,19 @@ const suggestedBlasts: SmsBlast[] = [
     message: "Thanks for connecting with Detroit Metro Men. What is the best next step for you right now?",
     estimatedRecipients: null,
     createdAt: "2026-06-24T16:00:00.000Z",
-    sentAt: null
+    sentAt: null,
+    errorMessage: null
   }
 ];
 
 const statusCopy: Record<string, { tone: "success" | "warning"; text: string }> = {
   queued: {
     tone: "success",
-    text: "Blast queued in sms_blasts."
+    text: "Blast is being processed from sms_blasts."
+  },
+  sent: {
+    tone: "success",
+    text: "Blast sent to eligible @detroitmetromen contacts."
   },
   draft: {
     tone: "success",
@@ -64,6 +71,10 @@ const statusCopy: Record<string, { tone: "success" | "warning"; text: string }> 
   "save-failed": {
     tone: "warning",
     text: "Could not save the blast. Check the sms_blasts table and Supabase credentials."
+  },
+  "send-failed": {
+    tone: "warning",
+    text: "The blast was saved, but no messages were delivered."
   }
 };
 
@@ -187,6 +198,7 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
                     <span className="pill">{blast.status}</span>
                   </div>
                   <div className="row-body">{blast.message}</div>
+                  {blast.errorMessage ? <div className="row-error">{blast.errorMessage}</div> : null}
                   <div className="mini-actions">
                     <span className="mini-action">
                       <Icon size={15} />

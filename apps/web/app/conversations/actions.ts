@@ -18,12 +18,18 @@ async function saveSmsBlast(formData: FormData, status: SmsBlastStatus) {
   let nextUrl = `/conversations?status=${status}`;
 
   try {
-    await createSmsBlast({
+    const blast = await createSmsBlast({
       title,
       message,
       audience: "@detroitmetromen contacts",
       status
     });
+    if (status === "queued") {
+      nextUrl =
+        blast.status === "sent"
+          ? "/conversations?status=sent"
+          : `/conversations?status=send-failed&reason=${encodeURIComponent(blast.errorMessage ?? "No messages were sent.")}`;
+    }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Could not save blast.";
     nextUrl = `/conversations?status=save-failed&reason=${encodeURIComponent(reason)}`;

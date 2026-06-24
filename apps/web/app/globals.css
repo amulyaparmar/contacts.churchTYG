@@ -2907,6 +2907,14 @@ h1 {
   line-height: 1.5;
 }
 
+.row-error {
+  border-left: 3px solid rgba(185, 68, 47, 0.45);
+  padding-left: 10px;
+  color: #7c2d1f;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .pill {
   display: inline-flex;
   min-width: max-content;
