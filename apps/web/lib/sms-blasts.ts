@@ -58,6 +58,7 @@ export type CreateSmsBlastInput = {
 
 const SMS_BLASTS_TABLE = "sms_blasts";
 const LEADS_TABLE = "leads";
+const CONVO_TABLE = "convo";
 const DEFAULT_AUDIENCE = "@detroitmetromen contacts";
 const DETROIT_METRO_MEN_BUSINESS_ID = "detroitmetromen";
 
@@ -89,7 +90,15 @@ type BlastDeliveryResult = {
   status: "sent" | "failed" | "skipped";
   messagePartIndex: number | null;
   messageId?: string;
+  conversationId?: string;
+  historyAppended?: boolean;
+  historyError?: string;
   error?: string;
+};
+
+type BlastDeliveryContext = {
+  blastId: string | null;
+  title: string;
 };
 
 type BlastDeliverySummary = {
@@ -328,6 +337,16 @@ async function parseSupabaseResponse(response: Response) {
   return isRecord(payload) ? [payload] : [];
 }
 
+async function fetchSupabaseRows(config: { url: string; key: string }, table: string, query: URLSearchParams) {
+  const response = await fetch(`${config.url}/rest/v1/${encodeURIComponent(table)}?${query.toString()}`, {
+    headers: supabaseHeaders(config),
+    cache: "no-store"
+  });
+
+  if (!response.ok) return [];
+  return parseSupabaseResponse(response);
+}
+
 function getPhotonV2Config() {
   const projectId = process.env.PHOTON_V2_PROJECT_ID ?? process.env.SPECTRUM_PROJECT_ID ?? process.env.PROJECT_ID;
   const projectSecret =
@@ -505,14 +524,25 @@ function normalizeSmsBlast(row: JsonRecord): SmsBlast {
   const sent = pickNumber(delivery, ["sent"]);
   const failed = pickNumber(delivery, ["failed"]);
   const skipped = pickNumber(delivery, ["skipped"]);
+  const rawDeliveryResults = Array.isArray(delivery.results) ? delivery.results.filter(isRecord) : [];
+  const hasHistoryAppendResults = rawDeliveryResults.some((result) => typeof result.historyAppended === "boolean");
+  const appendedToHistory = rawDeliveryResults.filter(
+    (result) => pickString(result, ["status"]) === "sent" && pickBoolean(result, ["historyAppended"])
+  ).length;
+  const historyAppendFailed = rawDeliveryResults.filter(
+    (result) => pickString(result, ["status"]) === "sent" && !pickBoolean(result, ["historyAppended"]) && pickString(result, ["historyError"])
+  ).length;
   const specificCount = requestedAudience.contactIds.length + requestedAudience.specificNumbers.length;
   const deliveryFailures = getDeliveryFailures(delivery);
+  const historyLog = hasHistoryAppendResults
+    ? `, ${appendedToHistory} appended to history${historyAppendFailed > 0 ? `, ${historyAppendFailed} history append failed` : ""}`
+    : "";
   const deliveryLog =
     attempted === null && sent === null && failed === null && skipped === null
       ? null
       : `${requestedAudience.mode === "specific" ? `Specific contacts${specificCount > 0 ? ` (${specificCount})` : ""}` : "@detroitmetromen"}${
           requestedAudience.filter ? ` filtered by "${requestedAudience.filter}"` : ""
-        }: ${sent ?? 0} sent, ${failed ?? 0} failed, ${skipped ?? 0} skipped`;
+        }: ${sent ?? 0} sent, ${failed ?? 0} failed, ${skipped ?? 0} skipped${historyLog}`;
 
   return {
     id: pickString(row, ["id", "blast_id"]) || crypto.randomUUID(),
@@ -628,6 +658,138 @@ async function sendRecipient(recipient: BlastRecipient, message: string) {
   return sendPhotonBlastMessage(recipient.phone, message);
 }
 
+function getProviderMessageId(message: JsonRecord) {
+  const photon = getNestedRecord(message, ["photon"]);
+  return pickString(photon, ["message_guid", "messageGuid", "sid", "id"]) || pickString(message, ["message_guid", "messageId", "sid"]);
+}
+
+async function findLeadIdByPhone(config: { url: string; key: string }, phone: string) {
+  const normalizedPhone = normalizePhone(phone);
+  if (!normalizedPhone) return "";
+
+  const query = new URLSearchParams({
+    select: "id",
+    business_id: `eq.${DETROIT_METRO_MEN_BUSINESS_ID}`,
+    normalized_phone: `eq.${normalizedPhone}`,
+    limit: "1"
+  });
+  const rows = await fetchSupabaseRows(config, LEADS_TABLE, query);
+  return pickString(rows[0], ["id"]);
+}
+
+async function findConvoForRecipient(config: { url: string; key: string }, recipient: BlastRecipient) {
+  const leadId = recipient.id.startsWith("specific:") ? await findLeadIdByPhone(config, recipient.phone) : recipient.id;
+  if (!leadId) return null;
+
+  const query = new URLSearchParams({
+    select: "id,messages",
+    business_id: `eq.${DETROIT_METRO_MEN_BUSINESS_ID}`,
+    lead_id: `eq.${leadId}`,
+    order: "updated_at.desc",
+    limit: "1"
+  });
+  const existingRows = await fetchSupabaseRows(config, CONVO_TABLE, query);
+  const existing = existingRows[0];
+  if (existing) return existing;
+
+  const now = new Date().toISOString();
+  const response = await fetch(`${config.url}/rest/v1/${encodeURIComponent(CONVO_TABLE)}`, {
+    method: "POST",
+    headers: supabaseHeaders(config, {
+      "content-type": "application/json",
+      prefer: "return=representation"
+    }),
+    body: JSON.stringify({
+      business_id: DETROIT_METRO_MEN_BUSINESS_ID,
+      lead_id: leadId,
+      messages: [],
+      agent_status: "active",
+      created_at: now,
+      updated_at: now
+    }),
+    cache: "no-store"
+  });
+
+  if (!response.ok) return null;
+  const createdRows = await parseSupabaseResponse(response);
+  return createdRows[0] ?? null;
+}
+
+async function appendSuccessfulBlastToConvoHistory(
+  config: { url: string; key: string },
+  recipient: BlastRecipient,
+  message: string,
+  response: Awaited<ReturnType<typeof sendRecipient>>,
+  context: BlastDeliveryContext & { messagePartIndex: number; sentAt: string }
+) {
+  const conversation = await findConvoForRecipient(config, recipient);
+  if (!conversation) {
+    throw new Error("No conversation row was found for this recipient.");
+  }
+
+  const conversationId = pickString(conversation, ["id"]);
+  const messages = Array.isArray(conversation.messages) ? conversation.messages.filter(isRecord) : [];
+  const messageId = response.id ?? "";
+  const alreadyAppended = messageId
+    ? messages.some((item) => getProviderMessageId(item) === messageId)
+    : messages.some((item) => {
+        const smsBlast = getNestedRecord(item, ["sms_blast", "smsBlast"]);
+        return (
+          pickString(smsBlast, ["blast_id", "blastId"]) === context.blastId &&
+          pickNumber(smsBlast, ["message_part_index", "messagePartIndex"]) === context.messagePartIndex
+        );
+      });
+
+  if (alreadyAppended) {
+    return {
+      conversationId,
+      appended: true
+    };
+  }
+
+  const historyItem = {
+    role: "assistant",
+    direction: "outbound",
+    content: message,
+    delivered: true,
+    delivery_status: "sent",
+    timestamp: context.sentAt,
+    source: "sms_blast",
+    photon: {
+      to: recipient.phone,
+      provider: response.provider,
+      ...(messageId ? { message_guid: messageId } : {})
+    },
+    sms_blast: {
+      blast_id: context.blastId,
+      title: context.title,
+      message_part_index: context.messagePartIndex
+    }
+  };
+
+  const patchResponse = await fetch(`${config.url}/rest/v1/${encodeURIComponent(CONVO_TABLE)}?id=eq.${encodeURIComponent(conversationId)}`, {
+    method: "PATCH",
+    headers: supabaseHeaders(config, {
+      "content-type": "application/json"
+    }),
+    body: JSON.stringify({
+      messages: [...messages, historyItem],
+      updated_at: context.sentAt
+    }),
+    cache: "no-store"
+  });
+
+  if (!patchResponse.ok) {
+    const detail = await patchResponse.text();
+    throw new Error(`Could not append conversation history (${patchResponse.status}): ${detail.slice(0, 140)}`);
+  }
+
+  return {
+    conversationId,
+    appended: true
+  };
+}
+
 function filterBlastRecipients(recipients: BlastRecipient[], audience: NormalizedSmsBlastAudienceInput) {
   if (audience.mode === "specific") {
     if (audience.contactIds.length === 0 && audience.specificNumbers.length === 0) {
@@ -660,7 +822,12 @@ function filterBlastRecipients(recipients: BlastRecipient[], audience: Normalize
   return recipients.filter((recipient) => recipient.filterText.includes(normalizedFilter));
 }
 
-async function deliverBlast(config: { url: string; key: string }, messages: string[], input?: SmsBlastAudienceInput): Promise<BlastDeliverySummary> {
+async function deliverBlast(
+  config: { url: string; key: string },
+  messages: string[],
+  input?: SmsBlastAudienceInput,
+  context: BlastDeliveryContext = { blastId: null, title: "SMS blast" }
+): Promise<BlastDeliverySummary> {
   const audience = normalizeAudienceInput(input);
   const messageParts = normalizeMessageParts(messages);
   if (messageParts.length === 0) throw new Error("Message must be at least 8 characters before sending.");
@@ -685,6 +852,23 @@ async function deliverBlast(config: { url: string; key: string }, messages: stri
     for (const [index, message] of messageParts.entries()) {
       try {
         const response = await sendRecipient(recipient, message);
+        const sentAt = new Date().toISOString();
+        let conversationId = "";
+        let historyAppended = false;
+        let historyError = "";
+
+        try {
+          const historyResult = await appendSuccessfulBlastToConvoHistory(config, recipient, message, response, {
+            ...context,
+            messagePartIndex: index,
+            sentAt
+          });
+          conversationId = historyResult.conversationId;
+          historyAppended = historyResult.appended;
+        } catch (historyAppendError) {
+          historyError = historyAppendError instanceof Error ? historyAppendError.message : "Could not append conversation history.";
+        }
+
         results.push({
           leadId: recipient.id,
           recipientName: recipient.name,
@@ -692,7 +876,10 @@ async function deliverBlast(config: { url: string; key: string }, messages: stri
           provider: recipient.provider,
           status: "sent",
           messagePartIndex: index,
-          messageId: response.id
+          messageId: response.id,
+          conversationId: conversationId || undefined,
+          historyAppended,
+          historyError: historyError || undefined
         });
       } catch (error) {
         results.push({
@@ -804,7 +991,10 @@ async function deliverAndUpdateSmsBlast(
   const audience = audienceInput ?? getAudienceInputFromMetadata(existingMetadata);
 
   try {
-    const delivery = await deliverBlast(config, messages, audience);
+    const delivery = await deliverBlast(config, messages, audience, {
+      blastId: id,
+      title: pickString(row, ["title", "name", "campaign"]) || "SMS blast"
+    });
     const status: SmsBlastStatus = delivery.sent > 0 && delivery.failed === 0 ? "sent" : "failed";
     const provider = delivery.providers.length === 1 ? delivery.providers[0] : delivery.providers.join(",");
     const errorMessage =
