@@ -3,57 +3,14 @@ import {
   ArrowLeft,
   CalendarClock,
   CheckCircle2,
-  Database,
   MessageSquareText,
-  Save,
   Send,
   Trash2,
   UsersRound
 } from "lucide-react";
-import { deleteSavedSmsBlast, queueSmsBlast, saveSmsBlastDraft, scheduleSmsBlast, sendSavedSmsBlast } from "./actions";
-import { listSmsBlasts, type SmsBlast } from "@/lib/sms-blasts";
-
-const suggestedBlasts: SmsBlast[] = [
-  {
-    id: "conference-reminder",
-    title: "Conference reminder",
-    audience: "@detroitmetromen contacts",
-    channel: "sms",
-    status: "draft",
-    message: "Reminder: FC Men is coming up. Reply YES if you want the registration link again.",
-    estimatedRecipients: null,
-    createdAt: "2026-06-24T16:00:00.000Z",
-    sentAt: null,
-    scheduledAt: null,
-    errorMessage: null
-  },
-  {
-    id: "rsvp-nudge",
-    title: "RSVP nudge",
-    audience: "@detroitmetromen contacts",
-    channel: "sms",
-    status: "draft",
-    message: "Hey! Want to join the next Detroit Metro Men gathering? Reply YES and we will send the details.",
-    estimatedRecipients: null,
-    createdAt: "2026-06-24T16:00:00.000Z",
-    sentAt: null,
-    scheduledAt: null,
-    errorMessage: null
-  },
-  {
-    id: "follow-up",
-    title: "Post-event follow-up",
-    audience: "@detroitmetromen contacts",
-    channel: "sms",
-    status: "draft",
-    message: "Thanks for connecting with Detroit Metro Men. What is the best next step for you right now?",
-    estimatedRecipients: null,
-    createdAt: "2026-06-24T16:00:00.000Z",
-    sentAt: null,
-    scheduledAt: null,
-    errorMessage: null
-  }
-];
+import { deleteSavedSmsBlast } from "./actions";
+import { BlastComposeForm, SavedBlastSendButton } from "./blast-send-controls";
+import { listSmsBlasts } from "@/lib/sms-blasts";
 
 const statusCopy: Record<string, { tone: "success" | "warning"; text: string }> = {
   queued: {
@@ -124,7 +81,7 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
   const params = searchParams ? await searchParams : {};
   const status = getStatus(params);
   const result = await listSmsBlasts();
-  const blasts = result.blasts.length > 0 ? result.blasts : suggestedBlasts;
+  const blasts = result.blasts;
   const hasDatabaseBlasts = result.source === "sms_blasts";
 
   return (
@@ -160,62 +117,7 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
         {result.error ? <div className="blast-alert blast-alert-warning">{result.error}</div> : null}
 
         <div className="blast-layout">
-          <form className="blast-compose" action={queueSmsBlast}>
-            <div className="blast-compose-head">
-              <div>
-                <p className="eyebrow">Send blast</p>
-                <h2>Message @detroitmetromen contacts</h2>
-              </div>
-              <Send size={22} aria-hidden="true" />
-            </div>
-
-            <label>
-              <span>Blast name</span>
-              <input name="title" defaultValue="Detroit Metro Men update" maxLength={80} />
-            </label>
-
-            <label>
-              <span>Text message</span>
-              <textarea
-                name="message"
-                rows={7}
-                maxLength={480}
-                required
-                defaultValue="Hey! Quick Detroit Metro Men update: "
-              />
-            </label>
-
-            <div className="blast-compose-meta">
-              <span>
-                <UsersRound size={15} />
-                Audience: @detroitmetromen contacts
-              </span>
-              <span>
-                <Database size={15} />
-                Saves to sms_blasts
-              </span>
-            </div>
-
-            <label>
-              <span>Schedule time</span>
-              <input name="scheduledAt" type="datetime-local" />
-            </label>
-
-            <div className="blast-button-row">
-              <button className="blast-secondary-button" type="submit" formAction={saveSmsBlastDraft}>
-                <Save size={16} />
-                Save draft
-              </button>
-              <button className="blast-secondary-button" type="submit" formAction={scheduleSmsBlast}>
-                <CalendarClock size={16} />
-                Schedule
-              </button>
-              <button className="blast-send-button" type="submit" formAction={queueSmsBlast}>
-                <Send size={16} />
-                Send blast
-              </button>
-            </div>
-          </form>
+          <BlastComposeForm />
 
           <div className="stack-list blast-list" aria-label="SMS blasts">
             {blasts.map((blast) => {
@@ -234,8 +136,20 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
                     </div>
                     <span className="pill">{statusLabel.toLowerCase()}</span>
                   </div>
-                  <div className="row-body">{blast.message}</div>
+                  {blast.messages.length > 1 ? (
+                    <div className="blast-message-list">
+                      {blast.messages.map((message, index) => (
+                        <div className="blast-message-part" key={`${blast.id}-${index}`}>
+                          <span>{index + 1}</span>
+                          <p>{message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="row-body">{blast.message}</div>
+                  )}
                   {blast.errorMessage ? <div className="row-error">{blast.errorMessage}</div> : null}
+                  {blast.deliveryLog ? <div className="row-log">{blast.deliveryLog}</div> : null}
                   <div className="mini-actions">
                     <span className="mini-action">
                       <Icon size={15} />
@@ -250,13 +164,7 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
                       {formatBlastDate(blast.sentAt ?? blast.scheduledAt ?? blast.createdAt)}
                     </span>
                     {canSendExisting ? (
-                      <form action={sendSavedSmsBlast}>
-                        <input type="hidden" name="blastId" value={blast.id} />
-                        <button className="mini-action mini-action-button" type="submit">
-                          <Send size={15} />
-                          Send now
-                        </button>
-                      </form>
+                      <SavedBlastSendButton blastId={blast.id} />
                     ) : null}
                     {hasDatabaseBlasts ? (
                       <form action={deleteSavedSmsBlast}>

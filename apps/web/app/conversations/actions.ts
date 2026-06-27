@@ -1,10 +1,38 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createSmsBlast, deleteSmsBlast, sendExistingSmsBlast, type SmsBlastStatus } from "@/lib/sms-blasts";
+import {
+  createSmsBlast,
+  deleteSmsBlast,
+  sendExistingSmsBlast,
+  type SmsBlastAudienceInput,
+  type SmsBlastStatus
+} from "@/lib/sms-blasts";
 
 function firstFormValue(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function formValues(formData: FormData, name: string) {
+  return formData
+    .getAll(name)
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+}
+
+function parseMessages(formData: FormData) {
+  const messages = formValues(formData, "messages");
+  const fallback = firstFormValue(formData.get("message"));
+  return messages.length > 0 ? messages : fallback ? [fallback] : [];
+}
+
+function parseAudienceInput(formData: FormData): SmsBlastAudienceInput {
+  const mode = firstFormValue(formData.get("audienceMode")) === "specific" ? "specific" : "all";
+  return {
+    mode,
+    specificNumber: firstFormValue(formData.get("specificNumber")) || null,
+    filter: firstFormValue(formData.get("audienceFilter")) || null
+  };
 }
 
 function getTimeZoneOffsetMs(date: Date, timeZone: string) {
@@ -48,10 +76,15 @@ function parseDetroitDateTimeLocal(value: string) {
 
 async function saveSmsBlast(formData: FormData, status: SmsBlastStatus) {
   const title = firstFormValue(formData.get("title")) || "Detroit Metro Men SMS blast";
-  const message = firstFormValue(formData.get("message"));
+  const messages = parseMessages(formData);
+  const audience = parseAudienceInput(formData);
 
-  if (message.length < 8) {
+  if (messages.join("").length < 8) {
     redirect("/conversations?status=message-too-short");
+  }
+
+  if (status === "queued" && audience.mode === "specific" && !audience.specificNumber) {
+    redirect("/conversations?status=send-failed&reason=Choose%20a%20phone%20number");
   }
 
   let nextUrl = `/conversations?status=${status}`;
@@ -59,9 +92,11 @@ async function saveSmsBlast(formData: FormData, status: SmsBlastStatus) {
   try {
     const blast = await createSmsBlast({
       title,
-      message,
-      audience: "@detroitmetromen contacts",
-      status
+      messages,
+      status,
+      audienceMode: audience.mode,
+      specificNumber: audience.specificNumber,
+      audienceFilter: audience.filter
     });
     if (status === "queued") {
       nextUrl =
@@ -87,11 +122,12 @@ export async function queueSmsBlast(formData: FormData) {
 
 export async function scheduleSmsBlast(formData: FormData) {
   const title = firstFormValue(formData.get("title")) || "Detroit Metro Men SMS blast";
-  const message = firstFormValue(formData.get("message"));
+  const messages = parseMessages(formData);
+  const audience = parseAudienceInput(formData);
   const scheduledAtValue = firstFormValue(formData.get("scheduledAt"));
   const scheduledAt = parseDetroitDateTimeLocal(scheduledAtValue);
 
-  if (message.length < 8) {
+  if (messages.join("").length < 8) {
     redirect("/conversations?status=message-too-short");
   }
 
@@ -104,10 +140,12 @@ export async function scheduleSmsBlast(formData: FormData) {
   try {
     await createSmsBlast({
       title,
-      message,
-      audience: "@detroitmetromen contacts",
+      messages,
       status: "queued",
-      scheduledAt: scheduledAt.toISOString()
+      scheduledAt: scheduledAt.toISOString(),
+      audienceMode: audience.mode,
+      specificNumber: audience.specificNumber,
+      audienceFilter: audience.filter
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Could not schedule blast.";
@@ -119,14 +157,19 @@ export async function scheduleSmsBlast(formData: FormData) {
 
 export async function sendSavedSmsBlast(formData: FormData) {
   const blastId = firstFormValue(formData.get("blastId"));
+  const audience = parseAudienceInput(formData);
   if (!blastId) {
     redirect("/conversations?status=send-failed&reason=Missing%20blast%20id");
+  }
+
+  if (audience.mode === "specific" && !audience.specificNumber) {
+    redirect("/conversations?status=send-failed&reason=Choose%20a%20phone%20number");
   }
 
   let nextUrl = "/conversations?status=sent";
 
   try {
-    const blast = await sendExistingSmsBlast(blastId);
+    const blast = await sendExistingSmsBlast(blastId, audience);
     nextUrl =
       blast.status === "sent"
         ? "/conversations?status=sent-existing"

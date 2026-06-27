@@ -6,6 +6,13 @@ import { imessage } from "spectrum-ts/providers/imessage";
 type JsonRecord = Record<string, unknown>;
 
 export type SmsBlastStatus = "draft" | "queued" | "sent" | "failed";
+export type SmsBlastAudienceMode = "all" | "specific";
+
+export type SmsBlastAudienceInput = {
+  mode?: SmsBlastAudienceMode;
+  specificNumber?: string | null;
+  filter?: string | null;
+};
 
 export type SmsBlast = {
   id: string;
@@ -14,19 +21,25 @@ export type SmsBlast = {
   channel: "sms";
   status: SmsBlastStatus;
   message: string;
+  messages: string[];
   estimatedRecipients: number | null;
   createdAt: string;
   sentAt: string | null;
   scheduledAt: string | null;
   errorMessage: string | null;
+  deliveryLog: string | null;
 };
 
 export type CreateSmsBlastInput = {
   title: string;
-  message: string;
+  message?: string;
+  messages?: string[];
   audience?: string;
   status?: SmsBlastStatus;
   scheduledAt?: string | null;
+  audienceMode?: SmsBlastAudienceMode;
+  specificNumber?: string | null;
+  audienceFilter?: string | null;
 };
 
 const SMS_BLASTS_TABLE = "sms_blasts";
@@ -43,6 +56,7 @@ type BlastRecipient = {
   provider: BlastProvider;
   suppressed: boolean;
   suppressionReason: string | null;
+  filterText: string;
 };
 
 type BlastDeliveryResult = {
@@ -50,6 +64,7 @@ type BlastDeliveryResult = {
   phone: string;
   provider: BlastProvider;
   status: "sent" | "failed" | "skipped";
+  messagePartIndex: number | null;
   messageId?: string;
   error?: string;
 };
@@ -57,6 +72,10 @@ type BlastDeliveryResult = {
 type BlastDeliverySummary = {
   audienceHandle: "@detroitmetromen";
   businessId: typeof DETROIT_METRO_MEN_BUSINESS_ID;
+  audienceMode: SmsBlastAudienceMode;
+  specificNumber: string | null;
+  filter: string | null;
+  messageParts: number;
   attempted: number;
   sent: number;
   failed: number;
@@ -129,6 +148,53 @@ function pickStringArray(record: JsonRecord | undefined, keys: string[]) {
   }
 
   return [];
+}
+
+function normalizeMessageParts(messages: unknown, fallback = "") {
+  const parts = Array.isArray(messages)
+    ? messages
+    : typeof messages === "string"
+      ? [messages]
+      : [];
+  const normalized = parts
+    .map((message) => (typeof message === "string" || typeof message === "number" ? String(message).trim() : ""))
+    .filter(Boolean);
+
+  if (normalized.length > 0) return normalized;
+  return fallback.trim() ? [fallback.trim()] : [];
+}
+
+function getBlastMessageParts(row: JsonRecord) {
+  const metadata = isRecord(row.metadata) ? row.metadata : {};
+  const message = pickString(row, ["message", "body", "text", "content"]);
+  return normalizeMessageParts(metadata.messageParts, message);
+}
+
+function normalizeAudienceInput(input?: SmsBlastAudienceInput): Required<SmsBlastAudienceInput> {
+  const mode = input?.mode === "specific" ? "specific" : "all";
+  return {
+    mode,
+    specificNumber: normalizePhone(input?.specificNumber ?? "") || null,
+    filter: input?.filter?.trim() || null
+  };
+}
+
+function getAudienceInputFromMetadata(metadata: JsonRecord): Required<SmsBlastAudienceInput> {
+  const requestedAudience = isRecord(metadata.requestedAudience) ? metadata.requestedAudience : {};
+  const mode = pickString(requestedAudience, ["mode"]) === "specific" ? "specific" : "all";
+
+  return normalizeAudienceInput({
+    mode,
+    specificNumber: pickString(requestedAudience, ["specificNumber", "phone"]),
+    filter: pickString(requestedAudience, ["filter"])
+  });
+}
+
+function describeAudience(input?: SmsBlastAudienceInput) {
+  const audience = normalizeAudienceInput(input);
+  if (audience.mode === "specific") return audience.specificNumber ? `Specific number ${audience.specificNumber}` : "Specific number";
+  if (audience.filter) return `${DEFAULT_AUDIENCE} filtered by "${audience.filter}"`;
+  return DEFAULT_AUDIENCE;
 }
 
 function normalizePhone(value?: string | null) {
@@ -347,27 +413,42 @@ async function sendPhotonBlastMessage(to: string, message: string) {
 
 function normalizeSmsBlast(row: JsonRecord): SmsBlast {
   const metadata = isRecord(row.metadata) ? row.metadata : {};
+  const requestedAudience = getAudienceInputFromMetadata(metadata);
+  const delivery = isRecord(metadata.delivery) ? metadata.delivery : {};
   const rawStatus = pickString(row, ["status"]).toLowerCase();
   const status: SmsBlastStatus = ["draft", "queued", "sent", "failed"].includes(rawStatus)
     ? (rawStatus as SmsBlastStatus)
     : "draft";
-  const message = pickString(row, ["message", "body", "text", "content"]);
+  const messages = getBlastMessageParts(row);
+  const message = messages.join("\n\n");
   const fallbackTitle = message ? `${message.slice(0, 42)}${message.length > 42 ? "..." : ""}` : "SMS blast";
+  const attempted = pickNumber(delivery, ["attempted"]);
+  const sent = pickNumber(delivery, ["sent"]);
+  const failed = pickNumber(delivery, ["failed"]);
+  const skipped = pickNumber(delivery, ["skipped"]);
+  const deliveryLog =
+    attempted === null && sent === null && failed === null && skipped === null
+      ? null
+      : `${requestedAudience.mode === "specific" ? "Specific number" : "@detroitmetromen"}${
+          requestedAudience.filter ? ` filtered by "${requestedAudience.filter}"` : ""
+        }: ${sent ?? 0} sent, ${failed ?? 0} failed, ${skipped ?? 0} skipped`;
 
   return {
     id: pickString(row, ["id", "blast_id"]) || crypto.randomUUID(),
     title: pickString(row, ["title", "name", "campaign"]) || fallbackTitle,
-    audience: pickString(row, ["audience", "segment", "scope"]) || pickString(metadata, ["audience"]) || DEFAULT_AUDIENCE,
+    audience: pickString(row, ["audience", "segment", "scope"]) || pickString(metadata, ["audience"]) || describeAudience(requestedAudience),
     channel: "sms",
     status,
     message,
+    messages,
     estimatedRecipients:
       pickNumber(row, ["estimated_recipients", "recipient_count", "recipients"]) ??
       pickNumber(metadata, ["estimatedRecipients", "recipientCount"]),
     createdAt: pickString(row, ["created_at", "createdAt"]) || new Date().toISOString(),
     sentAt: pickString(row, ["sent_at", "sentAt", "queued_at", "queuedAt"]) || null,
     scheduledAt: pickString(row, ["scheduled_at", "scheduledAt"]) || null,
-    errorMessage: pickString(row, ["error_message", "errorMessage"]) || null
+    errorMessage: pickString(row, ["error_message", "errorMessage"]) || null,
+    deliveryLog
   };
 }
 
@@ -417,14 +498,18 @@ async function listBlastRecipients(config: { url: string; key: string }) {
       const details = getNestedRecord(lead, ["details"]);
       const phone = normalizePhone(pickString(lead, ["normalized_phone"]) || pickString(details, ["phone", "sender_id", "number"]));
       const suppressionReason = getSuppressionReason(lead);
+      const name = pickString(details, ["name", "full_name"]) || phone || "Unknown contact";
+      const tags = pickStringArray(details, ["tags", "labels"]).join(" ");
+      const status = pickString(details, ["status", "kpiStatus"]);
 
       return {
         id: pickString(lead, ["id"]) || phone,
-        name: pickString(details, ["name", "full_name"]) || phone || "Unknown contact",
+        name,
         phone,
         provider: inferBlastProvider(lead),
         suppressed: Boolean(suppressionReason),
-        suppressionReason
+        suppressionReason,
+        filterText: [name, phone, status, tags].join(" ").toLowerCase()
       };
     })
     .filter((recipient) => recipient.id && recipient.phone);
@@ -459,8 +544,34 @@ async function sendRecipient(recipient: BlastRecipient, message: string) {
   return sendPhotonBlastMessage(recipient.phone, message);
 }
 
-async function deliverBlast(config: { url: string; key: string }, message: string): Promise<BlastDeliverySummary> {
-  const recipients = await listBlastRecipients(config);
+function filterBlastRecipients(recipients: BlastRecipient[], audience: Required<SmsBlastAudienceInput>) {
+  if (audience.mode === "specific") {
+    if (!audience.specificNumber) throw new Error("Specific phone number is required.");
+    const matched = recipients.find((recipient) => normalizePhone(recipient.phone) === audience.specificNumber);
+    return [
+      matched ?? {
+        id: `specific:${audience.specificNumber}`,
+        name: audience.specificNumber,
+        phone: audience.specificNumber,
+        provider: "photon" as const,
+        suppressed: false,
+        suppressionReason: null,
+        filterText: audience.specificNumber
+      }
+    ];
+  }
+
+  if (!audience.filter) return recipients;
+  const normalizedFilter = audience.filter.toLowerCase();
+  return recipients.filter((recipient) => recipient.filterText.includes(normalizedFilter));
+}
+
+async function deliverBlast(config: { url: string; key: string }, messages: string[], input?: SmsBlastAudienceInput): Promise<BlastDeliverySummary> {
+  const audience = normalizeAudienceInput(input);
+  const messageParts = normalizeMessageParts(messages);
+  if (messageParts.length === 0) throw new Error("Message must be at least 8 characters before sending.");
+
+  const recipients = filterBlastRecipients(await listBlastRecipients(config), audience);
   const results: BlastDeliveryResult[] = [];
 
   for (const recipient of recipients) {
@@ -470,37 +581,50 @@ async function deliverBlast(config: { url: string; key: string }, message: strin
         phone: recipient.phone,
         provider: recipient.provider,
         status: "skipped",
+        messagePartIndex: null,
         error: recipient.suppressionReason ?? "Contact is suppressed."
       });
       continue;
     }
 
-    try {
-      const response = await sendRecipient(recipient, message);
-      results.push({
-        leadId: recipient.id,
-        phone: recipient.phone,
-        provider: recipient.provider,
-        status: "sent",
-        messageId: response.id
-      });
-    } catch (error) {
-      results.push({
-        leadId: recipient.id,
-        phone: recipient.phone,
-        provider: recipient.provider,
-        status: "failed",
-        error: error instanceof Error ? error.message : "Unknown delivery error."
-      });
+    for (const [index, message] of messageParts.entries()) {
+      try {
+        const response = await sendRecipient(recipient, message);
+        results.push({
+          leadId: recipient.id,
+          phone: recipient.phone,
+          provider: recipient.provider,
+          status: "sent",
+          messagePartIndex: index,
+          messageId: response.id
+        });
+      } catch (error) {
+        results.push({
+          leadId: recipient.id,
+          phone: recipient.phone,
+          provider: recipient.provider,
+          status: "failed",
+          messagePartIndex: index,
+          error: error instanceof Error ? error.message : "Unknown delivery error."
+        });
+      }
     }
   }
+
+  const attemptedRecipients = recipients.filter((recipient) => !recipient.suppressed).length;
+  const failedRecipientIds = new Set(results.filter((result) => result.status === "failed").map((result) => result.leadId));
+  const sentRecipientIds = new Set(results.filter((result) => result.status === "sent").map((result) => result.leadId));
 
   return {
     audienceHandle: "@detroitmetromen",
     businessId: DETROIT_METRO_MEN_BUSINESS_ID,
-    attempted: results.filter((result) => result.status !== "skipped").length,
-    sent: results.filter((result) => result.status === "sent").length,
-    failed: results.filter((result) => result.status === "failed").length,
+    audienceMode: audience.mode,
+    specificNumber: audience.specificNumber,
+    filter: audience.filter,
+    messageParts: messageParts.length,
+    attempted: attemptedRecipients,
+    sent: Array.from(sentRecipientIds).filter((id) => !failedRecipientIds.has(id)).length,
+    failed: failedRecipientIds.size,
     skipped: results.filter((result) => result.status === "skipped").length,
     providers: Array.from(new Set(results.map((result) => result.provider))),
     results
@@ -567,15 +691,21 @@ export async function deleteSmsBlast(id: string) {
   }
 }
 
-async function deliverAndUpdateSmsBlast(config: { url: string; key: string }, row: JsonRecord, message: string) {
+async function deliverAndUpdateSmsBlast(
+  config: { url: string; key: string },
+  row: JsonRecord,
+  messages: string[],
+  audienceInput?: SmsBlastAudienceInput
+) {
   const id = pickString(row, ["id"]);
   if (!id) return row;
 
   const now = new Date().toISOString();
   const existingMetadata = getNestedRecord(row, ["metadata"]);
+  const audience = audienceInput ?? getAudienceInputFromMetadata(existingMetadata);
 
   try {
-    const delivery = await deliverBlast(config, message);
+    const delivery = await deliverBlast(config, messages, audience);
     const status: SmsBlastStatus = delivery.sent > 0 && delivery.failed === 0 ? "sent" : "failed";
     const provider = delivery.providers.length === 1 ? delivery.providers[0] : delivery.providers.join(",");
     const errorMessage =
@@ -595,6 +725,11 @@ async function deliverAndUpdateSmsBlast(config: { url: string; key: string }, ro
       error_message: errorMessage,
       metadata: {
         ...existingMetadata,
+        requestedAudience: {
+          mode: delivery.audienceMode,
+          specificNumber: delivery.specificNumber,
+          filter: delivery.filter
+        },
         delivery
       }
     });
@@ -609,6 +744,10 @@ async function deliverAndUpdateSmsBlast(config: { url: string; key: string }, ro
         delivery: {
           audienceHandle: "@detroitmetromen",
           businessId: DETROIT_METRO_MEN_BUSINESS_ID,
+          audienceMode: normalizeAudienceInput(audience).mode,
+          specificNumber: normalizeAudienceInput(audience).specificNumber,
+          filter: normalizeAudienceInput(audience).filter,
+          messageParts: messages.length,
           attempted: 0,
           sent: 0,
           failed: 1,
@@ -621,27 +760,33 @@ async function deliverAndUpdateSmsBlast(config: { url: string; key: string }, ro
   }
 }
 
-export async function sendExistingSmsBlast(id: string) {
+export async function sendExistingSmsBlast(id: string, audienceInput?: SmsBlastAudienceInput) {
   const config = getSupabaseConfig();
   if (!config) {
     throw new Error("Supabase is not configured for sms_blasts.");
   }
 
   const row = await getSmsBlastRow(config, id);
-  const message = pickString(row, ["message", "body", "text", "content"]);
-  if (message.length < 8) {
+  const messages = getBlastMessageParts(row);
+  if (messages.join("").length < 8) {
     throw new Error("Message must be at least 8 characters before sending.");
   }
 
   const queuedAt = new Date().toISOString();
+  const audience = audienceInput ?? getAudienceInputFromMetadata(getNestedRecord(row, ["metadata"]));
   const queuedRow = await updateSmsBlast(config, id, {
     status: "queued",
     queued_at: queuedAt,
     failed_at: null,
-    error_message: null
+    error_message: null,
+    audience: describeAudience(audience),
+    metadata: {
+      ...getNestedRecord(row, ["metadata"]),
+      requestedAudience: audience
+    }
   });
 
-  return normalizeSmsBlast(await deliverAndUpdateSmsBlast(config, queuedRow, message));
+  return normalizeSmsBlast(await deliverAndUpdateSmsBlast(config, queuedRow, messages, audience));
 }
 
 export async function processDueSmsBlasts(limit = 20) {
@@ -673,10 +818,10 @@ export async function processDueSmsBlasts(limit = 20) {
   const results = [];
 
   for (const row of rows) {
-    const message = pickString(row, ["message", "body", "text", "content"]);
+    const messages = getBlastMessageParts(row);
     const id = pickString(row, ["id"]);
 
-    if (!id || message.length < 8) {
+    if (!id || messages.join("").length < 8) {
       results.push({
         id,
         status: "failed",
@@ -685,7 +830,7 @@ export async function processDueSmsBlasts(limit = 20) {
       continue;
     }
 
-    const blast = normalizeSmsBlast(await deliverAndUpdateSmsBlast(config, row, message));
+    const blast = normalizeSmsBlast(await deliverAndUpdateSmsBlast(config, row, messages));
     results.push({
       id: blast.id,
       status: blast.status,
@@ -750,18 +895,27 @@ export async function createSmsBlast(input: CreateSmsBlastInput) {
 
   const now = new Date().toISOString();
   const scheduledAt = input.scheduledAt?.trim() || null;
+  const messages = normalizeMessageParts(input.messages, input.message);
+  const message = messages.join("\n\n");
+  const audience = normalizeAudienceInput({
+    mode: input.audienceMode,
+    specificNumber: input.specificNumber,
+    filter: input.audienceFilter
+  });
   const row: JsonRecord = {
     title: input.title,
-    audience: input.audience ?? DEFAULT_AUDIENCE,
+    audience: input.audience ?? describeAudience(audience),
     channel: "sms",
     status: input.status ?? "queued",
-    message: input.message,
+    message,
     created_at: now,
     metadata: {
       audienceHandle: "@detroitmetromen",
       contactSource: "contactsTYG",
       source: "contacts.church/conversations",
       savedAs: input.status ?? "queued",
+      messageParts: messages,
+      requestedAudience: audience,
       ...(scheduledAt ? { scheduledAt } : {})
     }
   };
@@ -796,6 +950,6 @@ export async function createSmsBlast(input: CreateSmsBlastInput) {
       ? payload
       : row;
   const shouldDeliverNow = (input.status ?? "queued") === "queued" && !scheduledAt;
-  const finalRow = shouldDeliverNow ? await deliverAndUpdateSmsBlast(config, created, input.message) : created;
+  const finalRow = shouldDeliverNow ? await deliverAndUpdateSmsBlast(config, created, messages, audience) : created;
   return normalizeSmsBlast(finalRow);
 }
