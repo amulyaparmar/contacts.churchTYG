@@ -23,11 +23,103 @@ type AudienceDialogProps = {
   title: string;
   confirmLabel: string;
   confirmAction: (formData: FormData) => Promise<void>;
+  audienceSummary?: string;
+  showAudienceFields?: boolean;
   onClose: () => void;
 };
 
-function AudienceDialog({ id, title, confirmLabel, confirmAction, onClose }: AudienceDialogProps) {
+function AudienceFields({
+  mode,
+  audienceFilter,
+  specificNumber,
+  onModeChange,
+  onAudienceFilterChange,
+  onSpecificNumberChange
+}: {
+  mode: "all" | "specific";
+  audienceFilter: string;
+  specificNumber: string;
+  onModeChange: (mode: "all" | "specific") => void;
+  onAudienceFilterChange: (filter: string) => void;
+  onSpecificNumberChange: (phone: string) => void;
+}) {
+  return (
+    <div className="blast-audience-panel">
+      <fieldset className="blast-audience-options">
+        <legend>Send to</legend>
+        <label className={mode === "all" ? "blast-audience-option blast-audience-option-active" : "blast-audience-option"}>
+          <input
+            type="radio"
+            name="audienceMode"
+            value="all"
+            checked={mode === "all"}
+            onChange={() => onModeChange("all")}
+          />
+          <span>
+            <UsersRound size={18} />
+            All @detroitmetromen contacts
+          </span>
+        </label>
+        <label className={mode === "specific" ? "blast-audience-option blast-audience-option-active" : "blast-audience-option"}>
+          <input
+            type="radio"
+            name="audienceMode"
+            value="specific"
+            checked={mode === "specific"}
+            onChange={() => onModeChange("specific")}
+          />
+          <span>
+            <Phone size={18} />
+            Specific number
+          </span>
+        </label>
+      </fieldset>
+
+      {mode === "all" ? (
+        <label className="blast-modal-field">
+          <span>
+            <Filter size={15} />
+            Filter
+          </span>
+          <input
+            name="audienceFilter"
+            placeholder="name, phone, status, or tag"
+            value={audienceFilter}
+            onChange={(event) => onAudienceFilterChange(event.target.value)}
+          />
+        </label>
+      ) : (
+        <label className="blast-modal-field">
+          <span>
+            <Phone size={15} />
+            Phone number
+          </span>
+          <input
+            name="specificNumber"
+            inputMode="tel"
+            placeholder="+13135551212"
+            required
+            value={specificNumber}
+            onChange={(event) => onSpecificNumberChange(event.target.value)}
+          />
+        </label>
+      )}
+    </div>
+  );
+}
+
+function AudienceDialog({
+  id,
+  title,
+  confirmLabel,
+  confirmAction,
+  audienceSummary,
+  showAudienceFields = false,
+  onClose
+}: AudienceDialogProps) {
   const [mode, setMode] = useState<"all" | "specific">("all");
+  const [audienceFilter, setAudienceFilter] = useState("");
+  const [specificNumber, setSpecificNumber] = useState("");
 
   return (
     <div className="blast-modal" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}>
@@ -43,52 +135,20 @@ function AudienceDialog({ id, title, confirmLabel, confirmAction, onClose }: Aud
           </button>
         </div>
 
-        <fieldset className="blast-audience-options">
-          <legend>Audience</legend>
-          <label className={mode === "all" ? "blast-audience-option blast-audience-option-active" : "blast-audience-option"}>
-            <input
-              type="radio"
-              name="audienceMode"
-              value="all"
-              checked={mode === "all"}
-              onChange={() => setMode("all")}
-            />
-            <span>
-              <UsersRound size={18} />
-              All @detroitmetromen contacts
-            </span>
-          </label>
-          <label className={mode === "specific" ? "blast-audience-option blast-audience-option-active" : "blast-audience-option"}>
-            <input
-              type="radio"
-              name="audienceMode"
-              value="specific"
-              checked={mode === "specific"}
-              onChange={() => setMode("specific")}
-            />
-            <span>
-              <Phone size={18} />
-              Specific number
-            </span>
-          </label>
-        </fieldset>
-
-        {mode === "all" ? (
-          <label className="blast-modal-field">
-            <span>
-              <Filter size={15} />
-              Filter
-            </span>
-            <input name="audienceFilter" placeholder="name, phone, status, or tag" />
-          </label>
+        {showAudienceFields ? (
+          <AudienceFields
+            mode={mode}
+            audienceFilter={audienceFilter}
+            specificNumber={specificNumber}
+            onModeChange={setMode}
+            onAudienceFilterChange={setAudienceFilter}
+            onSpecificNumberChange={setSpecificNumber}
+          />
         ) : (
-          <label className="blast-modal-field">
-            <span>
-              <Phone size={15} />
-              Phone number
-            </span>
-            <input name="specificNumber" inputMode="tel" placeholder="+13135551212" required />
-          </label>
+          <div className="blast-confirm-summary">
+            <UsersRound size={17} />
+            <span>{audienceSummary}</span>
+          </div>
         )}
 
         <div className="blast-modal-actions">
@@ -109,6 +169,17 @@ export function BlastComposeForm() {
   const dialogId = useId();
   const [messages, setMessages] = useState(defaultMessages);
   const [sendOpen, setSendOpen] = useState(false);
+  const [audienceMode, setAudienceMode] = useState<"all" | "specific">("all");
+  const [audienceFilter, setAudienceFilter] = useState("");
+  const [specificNumber, setSpecificNumber] = useState("");
+  const audienceSummary =
+    audienceMode === "specific"
+      ? specificNumber.trim()
+        ? `Specific number: ${specificNumber.trim()}`
+        : "Specific number selected"
+      : audienceFilter.trim()
+        ? `All @detroitmetromen contacts filtered by "${audienceFilter.trim()}"`
+        : "All @detroitmetromen contacts";
 
   function updateMessage(index: number, value: string) {
     setMessages((current) => current.map((message, messageIndex) => (messageIndex === index ? value : message)));
@@ -170,6 +241,15 @@ export function BlastComposeForm() {
         </span>
       </div>
 
+      <AudienceFields
+        mode={audienceMode}
+        audienceFilter={audienceFilter}
+        specificNumber={specificNumber}
+        onModeChange={setAudienceMode}
+        onAudienceFilterChange={setAudienceFilter}
+        onSpecificNumberChange={setSpecificNumber}
+      />
+
       <label>
         <span>Schedule time</span>
         <input name="scheduledAt" type="datetime-local" />
@@ -196,6 +276,7 @@ export function BlastComposeForm() {
           title="Send this blast?"
           confirmLabel="Send blast"
           confirmAction={queueSmsBlast}
+          audienceSummary={audienceSummary}
           onClose={() => setSendOpen(false)}
         />
       ) : null}
@@ -220,6 +301,7 @@ export function SavedBlastSendButton({ blastId }: { blastId: string }) {
           title="Send saved blast?"
           confirmLabel="Send saved blast"
           confirmAction={sendSavedSmsBlast}
+          showAudienceFields
           onClose={() => setSendOpen(false)}
         />
       ) : null}

@@ -135,6 +135,10 @@ export async function scheduleSmsBlast(formData: FormData) {
     redirect("/conversations?status=schedule-failed&reason=Choose%20a%20future%20Detroit%20time");
   }
 
+  if (audience.mode === "specific" && !audience.specificNumber) {
+    redirect("/conversations?status=schedule-failed&reason=Choose%20a%20phone%20number");
+  }
+
   let nextUrl = "/conversations?status=scheduled";
 
   try {
