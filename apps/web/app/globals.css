@@ -2926,6 +2926,56 @@ h1 {
   line-height: 1.45;
 }
 
+.blast-failure-list {
+  display: grid;
+  max-height: 260px;
+  gap: 8px;
+  overflow: auto;
+  border: 1px solid rgba(185, 68, 47, 0.2);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 247, 242, 0.78);
+}
+
+.blast-failure-heading {
+  color: #7c2d1f;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.blast-failure-item {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid rgba(185, 68, 47, 0.14);
+  padding-top: 8px;
+}
+
+.blast-failure-item strong,
+.blast-failure-item span {
+  display: block;
+}
+
+.blast-failure-item strong {
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+.blast-failure-item span {
+  margin-top: 2px;
+  color: #7c2d1f;
+  font-size: 0.78rem;
+  font-weight: 760;
+}
+
+.blast-failure-item p {
+  margin: 0;
+  color: #7c2d1f;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .pill {
   display: inline-flex;
   min-width: max-content;

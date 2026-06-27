@@ -16,6 +16,15 @@ export type SmsBlastAudienceInput = {
   filter?: string | null;
 };
 
+export type SmsBlastDeliveryFailure = {
+  leadId: string;
+  name: string;
+  phone: string;
+  provider: string;
+  messageParts: string[];
+  error: string;
+};
+
 export type SmsBlast = {
   id: string;
   title: string;
@@ -30,6 +39,7 @@ export type SmsBlast = {
   scheduledAt: string | null;
   errorMessage: string | null;
   deliveryLog: string | null;
+  deliveryFailures: SmsBlastDeliveryFailure[];
 };
 
 export type CreateSmsBlastInput = {
@@ -73,6 +83,7 @@ type NormalizedSmsBlastAudienceInput = {
 
 type BlastDeliveryResult = {
   leadId: string;
+  recipientName: string;
   phone: string;
   provider: BlastProvider;
   status: "sent" | "failed" | "skipped";
@@ -227,6 +238,42 @@ function describeAudience(input?: SmsBlastAudienceInput) {
   }
   if (audience.filter) return `${DEFAULT_AUDIENCE} filtered by "${audience.filter}"`;
   return DEFAULT_AUDIENCE;
+}
+
+function getDeliveryFailures(delivery: JsonRecord): SmsBlastDeliveryFailure[] {
+  const rawResults = Array.isArray(delivery.results) ? delivery.results.filter(isRecord) : [];
+  const failures = new Map<string, SmsBlastDeliveryFailure>();
+
+  for (const result of rawResults) {
+    if (pickString(result, ["status"]) !== "failed") continue;
+
+    const leadId = pickString(result, ["leadId", "lead_id", "id"]);
+    const phone = pickString(result, ["phone", "to"]);
+    const name = pickString(result, ["recipientName", "name"]) || phone || leadId || "Unknown contact";
+    const provider = pickString(result, ["provider"]) || "unknown";
+    const error = pickString(result, ["error", "errorMessage", "message"]) || "Delivery failed.";
+    const messagePartIndex = pickNumber(result, ["messagePartIndex", "message_part_index"]);
+    const messagePart = messagePartIndex === null ? "Message" : `Message ${messagePartIndex + 1}`;
+    const key = `${leadId || phone || name}:${provider}`;
+    const existing = failures.get(key);
+
+    if (existing) {
+      if (!existing.messageParts.includes(messagePart)) existing.messageParts.push(messagePart);
+      if (!existing.error.includes(error)) existing.error = `${existing.error}; ${error}`;
+      continue;
+    }
+
+    failures.set(key, {
+      leadId,
+      name,
+      phone,
+      provider,
+      messageParts: [messagePart],
+      error
+    });
+  }
+
+  return Array.from(failures.values());
 }
 
 function normalizePhone(value?: string | null) {
@@ -459,6 +506,7 @@ function normalizeSmsBlast(row: JsonRecord): SmsBlast {
   const failed = pickNumber(delivery, ["failed"]);
   const skipped = pickNumber(delivery, ["skipped"]);
   const specificCount = requestedAudience.contactIds.length + requestedAudience.specificNumbers.length;
+  const deliveryFailures = getDeliveryFailures(delivery);
   const deliveryLog =
     attempted === null && sent === null && failed === null && skipped === null
       ? null
@@ -481,7 +529,8 @@ function normalizeSmsBlast(row: JsonRecord): SmsBlast {
     sentAt: pickString(row, ["sent_at", "sentAt", "queued_at", "queuedAt"]) || null,
     scheduledAt: pickString(row, ["scheduled_at", "scheduledAt"]) || null,
     errorMessage: pickString(row, ["error_message", "errorMessage"]) || null,
-    deliveryLog
+    deliveryLog,
+    deliveryFailures
   };
 }
 
@@ -623,6 +672,7 @@ async function deliverBlast(config: { url: string; key: string }, messages: stri
     if (recipient.suppressed) {
       results.push({
         leadId: recipient.id,
+        recipientName: recipient.name,
         phone: recipient.phone,
         provider: recipient.provider,
         status: "skipped",
@@ -637,6 +687,7 @@ async function deliverBlast(config: { url: string; key: string }, messages: stri
         const response = await sendRecipient(recipient, message);
         results.push({
           leadId: recipient.id,
+          recipientName: recipient.name,
           phone: recipient.phone,
           provider: recipient.provider,
           status: "sent",
@@ -646,6 +697,7 @@ async function deliverBlast(config: { url: string; key: string }, messages: stri
       } catch (error) {
         results.push({
           leadId: recipient.id,
+          recipientName: recipient.name,
           phone: recipient.phone,
           provider: recipient.provider,
           status: "failed",

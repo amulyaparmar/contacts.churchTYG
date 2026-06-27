@@ -149,6 +149,22 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
                   )}
                   {blast.errorMessage ? <div className="row-error">{blast.errorMessage}</div> : null}
                   {blast.deliveryLog ? <div className="row-log">{blast.deliveryLog}</div> : null}
+                  {blast.deliveryFailures.length > 0 ? (
+                    <div className="blast-failure-list">
+                      <div className="blast-failure-heading">Failed deliveries</div>
+                      {blast.deliveryFailures.map((failure) => (
+                        <div className="blast-failure-item" key={`${failure.leadId}-${failure.phone}-${failure.provider}`}>
+                          <div>
+                            <strong>{failure.name}</strong>
+                            <span>{[failure.phone, failure.provider].filter(Boolean).join(" · ")}</span>
+                          </div>
+                          <p>
+                            {failure.messageParts.join(", ")}: {failure.error}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="mini-actions">
                     <span className="mini-action">
                       <Icon size={15} />
