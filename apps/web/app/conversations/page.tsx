@@ -9,7 +9,7 @@ import {
   UsersRound
 } from "lucide-react";
 import { deleteSavedSmsBlast } from "./actions";
-import { BlastComposeForm, SavedBlastSendButton } from "./blast-send-controls";
+import { BlastComposeForm, ImportBlastToEditorButton, SavedBlastSendActions } from "./blast-send-controls";
 import { listSmsBlasts } from "@/lib/sms-blasts";
 
 const statusCopy: Record<string, { tone: "success" | "warning"; text: string }> = {
@@ -123,7 +123,6 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
             {blasts.map((blast) => {
               const isSent = blast.status === "sent";
               const isScheduled = blast.status === "queued" && Boolean(blast.scheduledAt);
-              const canSendExisting = hasDatabaseBlasts && !isSent;
               const Icon = isSent ? CheckCircle2 : blast.status === "queued" ? Send : CalendarClock;
               const statusLabel = isSent ? "Sent" : isScheduled ? "Scheduled" : blast.status === "queued" ? "Queued" : "Draft";
 
@@ -163,8 +162,11 @@ export default async function ConversationsPage({ searchParams }: ConversationsP
                       <CalendarClock size={15} />
                       {formatBlastDate(blast.sentAt ?? blast.scheduledAt ?? blast.createdAt)}
                     </span>
-                    {canSendExisting ? (
-                      <SavedBlastSendButton blastId={blast.id} />
+                    {hasDatabaseBlasts ? (
+                      <ImportBlastToEditorButton title={blast.title} messages={blast.messages.length > 0 ? blast.messages : [blast.message]} />
+                    ) : null}
+                    {hasDatabaseBlasts ? (
+                      <SavedBlastSendActions blastId={blast.id} isSent={isSent} />
                     ) : null}
                     {hasDatabaseBlasts ? (
                       <form action={deleteSavedSmsBlast}>

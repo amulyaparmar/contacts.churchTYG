@@ -14,9 +14,21 @@ export async function POST(request: Request) {
     const payload: unknown = await request.json();
     const body = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
     const title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : "Detroit Metro Men SMS blast";
-    const message = typeof body.message === "string" ? body.message.trim() : "";
+    const messages = Array.isArray(body.messages)
+      ? body.messages.map((message) => (typeof message === "string" ? message.trim() : "")).filter(Boolean)
+      : [];
+    const message = messages.length > 0 ? messages.join("\n\n") : typeof body.message === "string" ? body.message.trim() : "";
     const requestedStatus = typeof body.status === "string" ? body.status.trim().toLowerCase() : "";
     const scheduledAt = typeof body.scheduledAt === "string" && body.scheduledAt.trim() ? body.scheduledAt.trim() : null;
+    const audienceMode = body.audienceMode === "specific" ? "specific" : "all";
+    const specificNumbers = Array.isArray(body.specificNumbers)
+      ? body.specificNumbers.map((number) => (typeof number === "string" ? number.trim() : "")).filter(Boolean)
+      : [];
+    const contactIds = Array.isArray(body.contactIds)
+      ? body.contactIds.map((contactId) => (typeof contactId === "string" ? contactId.trim() : "")).filter(Boolean)
+      : [];
+    const specificNumber = typeof body.specificNumber === "string" && body.specificNumber.trim() ? body.specificNumber.trim() : null;
+    const audienceFilter = typeof body.audienceFilter === "string" && body.audienceFilter.trim() ? body.audienceFilter.trim() : null;
     const status: SmsBlastStatus = requestedStatus === "draft" ? "draft" : "queued";
     const dryRun = body.dryRun === true;
 
@@ -31,10 +43,14 @@ export async function POST(request: Request) {
 
     const blast = await createSmsBlast({
       title,
-      message,
-      audience: "@detroitmetromen contacts",
+      messages: messages.length > 0 ? messages : [message],
       status,
-      scheduledAt
+      scheduledAt,
+      audienceMode,
+      specificNumber,
+      specificNumbers,
+      contactIds,
+      audienceFilter
     });
 
     return NextResponse.json({ blast }, { status: 201 });

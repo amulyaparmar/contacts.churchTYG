@@ -26,13 +26,26 @@ function parseMessages(formData: FormData) {
   return messages.length > 0 ? messages : fallback ? [fallback] : [];
 }
 
+function parsePhoneList(values: string[]) {
+  return values
+    .flatMap((value) => value.split(/[\n,;]+/))
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 function parseAudienceInput(formData: FormData): SmsBlastAudienceInput {
   const mode = firstFormValue(formData.get("audienceMode")) === "specific" ? "specific" : "all";
   return {
     mode,
     specificNumber: firstFormValue(formData.get("specificNumber")) || null,
+    specificNumbers: parsePhoneList(formValues(formData, "specificNumbers")),
+    contactIds: formValues(formData, "contactIds"),
     filter: firstFormValue(formData.get("audienceFilter")) || null
   };
+}
+
+function hasSpecificAudience(audience: SmsBlastAudienceInput) {
+  return Boolean(audience.specificNumber || audience.specificNumbers?.length || audience.contactIds?.length);
 }
 
 function getTimeZoneOffsetMs(date: Date, timeZone: string) {
@@ -83,8 +96,8 @@ async function saveSmsBlast(formData: FormData, status: SmsBlastStatus) {
     redirect("/conversations?status=message-too-short");
   }
 
-  if (status === "queued" && audience.mode === "specific" && !audience.specificNumber) {
-    redirect("/conversations?status=send-failed&reason=Choose%20a%20phone%20number");
+  if (status === "queued" && audience.mode === "specific" && !hasSpecificAudience(audience)) {
+    redirect("/conversations?status=send-failed&reason=Choose%20at%20least%20one%20contact%20or%20phone%20number");
   }
 
   let nextUrl = `/conversations?status=${status}`;
@@ -96,6 +109,8 @@ async function saveSmsBlast(formData: FormData, status: SmsBlastStatus) {
       status,
       audienceMode: audience.mode,
       specificNumber: audience.specificNumber,
+      specificNumbers: audience.specificNumbers,
+      contactIds: audience.contactIds,
       audienceFilter: audience.filter
     });
     if (status === "queued") {
@@ -135,8 +150,8 @@ export async function scheduleSmsBlast(formData: FormData) {
     redirect("/conversations?status=schedule-failed&reason=Choose%20a%20future%20Detroit%20time");
   }
 
-  if (audience.mode === "specific" && !audience.specificNumber) {
-    redirect("/conversations?status=schedule-failed&reason=Choose%20a%20phone%20number");
+  if (audience.mode === "specific" && !hasSpecificAudience(audience)) {
+    redirect("/conversations?status=schedule-failed&reason=Choose%20at%20least%20one%20contact%20or%20phone%20number");
   }
 
   let nextUrl = "/conversations?status=scheduled";
@@ -149,6 +164,8 @@ export async function scheduleSmsBlast(formData: FormData) {
       scheduledAt: scheduledAt.toISOString(),
       audienceMode: audience.mode,
       specificNumber: audience.specificNumber,
+      specificNumbers: audience.specificNumbers,
+      contactIds: audience.contactIds,
       audienceFilter: audience.filter
     });
   } catch (error) {
@@ -166,8 +183,8 @@ export async function sendSavedSmsBlast(formData: FormData) {
     redirect("/conversations?status=send-failed&reason=Missing%20blast%20id");
   }
 
-  if (audience.mode === "specific" && !audience.specificNumber) {
-    redirect("/conversations?status=send-failed&reason=Choose%20a%20phone%20number");
+  if (audience.mode === "specific" && !hasSpecificAudience(audience)) {
+    redirect("/conversations?status=send-failed&reason=Choose%20at%20least%20one%20contact%20or%20phone%20number");
   }
 
   let nextUrl = "/conversations?status=sent";

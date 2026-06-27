@@ -1,10 +1,11 @@
 "use client";
 
-import { useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
   Database,
   Filter,
+  LoaderCircle,
   MessageSquarePlus,
   Phone,
   Plus,
@@ -14,9 +15,25 @@ import {
   UsersRound,
   X
 } from "lucide-react";
+import { useFormStatus } from "react-dom";
 import { queueSmsBlast, saveSmsBlastDraft, scheduleSmsBlast, sendSavedSmsBlast } from "./actions";
 
 const defaultMessages = ["Hey! Quick Detroit Metro Men update: ", "Registration link: "];
+
+type AudienceContact = {
+  id: string;
+  name: string;
+  phone: string;
+  provider: string;
+  suppressed: boolean;
+  suppressionReason: string | null;
+  filterText: string;
+};
+
+type ImportBlastDetail = {
+  title: string;
+  messages: string[];
+};
 
 type AudienceDialogProps = {
   id: string;
@@ -28,21 +45,108 @@ type AudienceDialogProps = {
   onClose: () => void;
 };
 
+function SendSubmitButton({
+  children,
+  className = "blast-send-button",
+  formAction
+}: {
+  children: ReactNode;
+  className?: string;
+  formAction?: (formData: FormData) => Promise<void>;
+}) {
+  const { pending } = useFormStatus();
+
+  return (
+    <button className={className} type="submit" formAction={formAction} disabled={pending} aria-disabled={pending}>
+      {pending ? (
+        <>
+          <LoaderCircle className="blast-loading-icon" size={16} />
+          Sending...
+        </>
+      ) : (
+        children
+      )}
+    </button>
+  );
+}
+
 function AudienceFields({
   mode,
   audienceFilter,
-  specificNumber,
+  manualNumbers,
+  selectedContactIds,
   onModeChange,
   onAudienceFilterChange,
-  onSpecificNumberChange
+  onManualNumbersChange,
+  onSelectedContactIdsChange
 }: {
   mode: "all" | "specific";
   audienceFilter: string;
-  specificNumber: string;
+  manualNumbers: string;
+  selectedContactIds: string[];
   onModeChange: (mode: "all" | "specific") => void;
   onAudienceFilterChange: (filter: string) => void;
-  onSpecificNumberChange: (phone: string) => void;
+  onManualNumbersChange: (numbers: string) => void;
+  onSelectedContactIdsChange: (contactIds: string[]) => void;
 }) {
+  const [contacts, setContacts] = useState<AudienceContact[]>([]);
+  const [contactsError, setContactsError] = useState("");
+  const [contactsLoaded, setContactsLoaded] = useState(false);
+  const [contactSearch, setContactSearch] = useState("");
+  const selectedContactSet = useMemo(() => new Set(selectedContactIds), [selectedContactIds]);
+  const selectedContacts = contacts.filter((contact) => selectedContactSet.has(contact.id));
+  const filteredContacts = useMemo(() => {
+    const query = contactSearch.trim().toLowerCase();
+    if (!query) return contacts.slice(0, 8);
+    return contacts
+      .filter((contact) => `${contact.name} ${contact.phone} ${contact.provider} ${contact.filterText}`.toLowerCase().includes(query))
+      .slice(0, 8);
+  }, [contactSearch, contacts]);
+
+  useEffect(() => {
+    if (mode !== "specific" || contactsLoaded || contactsError) return;
+
+    let active = true;
+
+    fetch("/api/sms-blasts", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ dryRun: true })
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          preview?: { recipients?: AudienceContact[] };
+          error?: string;
+        };
+        if (!response.ok) throw new Error(payload.error || "Could not load contacts.");
+        return payload.preview?.recipients ?? [];
+      })
+      .then((recipients) => {
+        if (!active) return;
+        setContacts(recipients);
+        setContactsLoaded(true);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setContactsError(error instanceof Error ? error.message : "Could not load contacts.");
+        setContactsLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [contactsError, contactsLoaded, mode]);
+
+  function toggleContact(contactId: string) {
+    onSelectedContactIdsChange(
+      selectedContactSet.has(contactId)
+        ? selectedContactIds.filter((selectedId) => selectedId !== contactId)
+        : [...selectedContactIds, contactId]
+    );
+  }
+
   return (
     <div className="blast-audience-panel">
       <fieldset className="blast-audience-options">
@@ -70,7 +174,7 @@ function AudienceFields({
           />
           <span>
             <Phone size={18} />
-            Specific number
+            Specific contacts
           </span>
         </label>
       </fieldset>
@@ -89,20 +193,72 @@ function AudienceFields({
           />
         </label>
       ) : (
-        <label className="blast-modal-field">
-          <span>
-            <Phone size={15} />
-            Phone number
-          </span>
-          <input
-            name="specificNumber"
-            inputMode="tel"
-            placeholder="+13135551212"
-            required
-            value={specificNumber}
-            onChange={(event) => onSpecificNumberChange(event.target.value)}
-          />
-        </label>
+        <div className="blast-specific-targets">
+          {selectedContactIds.map((contactId) => (
+            <input key={contactId} type="hidden" name="contactIds" value={contactId} />
+          ))}
+          <label className="blast-modal-field">
+            <span>
+              <Filter size={15} />
+              Search contacts
+            </span>
+            <input
+              value={contactSearch}
+              onChange={(event) => setContactSearch(event.target.value)}
+              placeholder="name, phone, status, or tag"
+            />
+          </label>
+
+          {selectedContacts.length > 0 ? (
+            <div className="blast-selected-contacts" aria-label="Selected contacts">
+              {selectedContacts.map((contact) => (
+                <button type="button" key={contact.id} onClick={() => toggleContact(contact.id)}>
+                  <X size={13} />
+                  {contact.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="blast-contact-results">
+            {!contactsLoaded && !contactsError ? <div className="blast-contact-empty">Loading contacts...</div> : null}
+            {contactsError ? <div className="blast-contact-empty">{contactsError}</div> : null}
+            {contactsLoaded && !contactsError && filteredContacts.length === 0 ? (
+              <div className="blast-contact-empty">No contacts match that search.</div>
+            ) : null}
+            {filteredContacts.map((contact) => (
+              <label
+                className={selectedContactSet.has(contact.id) ? "blast-contact-result blast-contact-result-selected" : "blast-contact-result"}
+                key={contact.id}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedContactSet.has(contact.id)}
+                  onChange={() => toggleContact(contact.id)}
+                />
+                <span>
+                  <strong>{contact.name}</strong>
+                  <small>{contact.phone || contact.provider}</small>
+                </span>
+                {contact.suppressed ? <em>suppressed</em> : null}
+              </label>
+            ))}
+          </div>
+
+          <label className="blast-modal-field">
+            <span>
+              <Phone size={15} />
+              Add phone numbers
+            </span>
+            <textarea
+              name="specificNumbers"
+              rows={3}
+              placeholder="+13135551212, +12485551212"
+              value={manualNumbers}
+              onChange={(event) => onManualNumbersChange(event.target.value)}
+            />
+          </label>
+        </div>
       )}
     </div>
   );
@@ -119,7 +275,8 @@ function AudienceDialog({
 }: AudienceDialogProps) {
   const [mode, setMode] = useState<"all" | "specific">("all");
   const [audienceFilter, setAudienceFilter] = useState("");
-  const [specificNumber, setSpecificNumber] = useState("");
+  const [manualNumbers, setManualNumbers] = useState("");
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
 
   return (
     <div className="blast-modal" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}>
@@ -139,10 +296,12 @@ function AudienceDialog({
           <AudienceFields
             mode={mode}
             audienceFilter={audienceFilter}
-            specificNumber={specificNumber}
+            manualNumbers={manualNumbers}
+            selectedContactIds={selectedContactIds}
             onModeChange={setMode}
             onAudienceFilterChange={setAudienceFilter}
-            onSpecificNumberChange={setSpecificNumber}
+            onManualNumbersChange={setManualNumbers}
+            onSelectedContactIdsChange={setSelectedContactIds}
           />
         ) : (
           <div className="blast-confirm-summary">
@@ -155,10 +314,10 @@ function AudienceDialog({
           <button className="blast-secondary-button" type="button" onClick={onClose}>
             Cancel
           </button>
-          <button className="blast-send-button" type="submit" formAction={confirmAction}>
+          <SendSubmitButton formAction={confirmAction}>
             <Send size={16} />
             {confirmLabel}
-          </button>
+          </SendSubmitButton>
         </div>
       </div>
     </div>
@@ -167,16 +326,24 @@ function AudienceDialog({
 
 export function BlastComposeForm() {
   const dialogId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const [title, setTitle] = useState("Detroit Metro Men update");
   const [messages, setMessages] = useState(defaultMessages);
   const [sendOpen, setSendOpen] = useState(false);
   const [audienceMode, setAudienceMode] = useState<"all" | "specific">("all");
   const [audienceFilter, setAudienceFilter] = useState("");
-  const [specificNumber, setSpecificNumber] = useState("");
+  const [manualNumbers, setManualNumbers] = useState("");
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
+  const manualNumberCount = manualNumbers
+    .split(/[\n,;]+/)
+    .map((number) => number.trim())
+    .filter(Boolean).length;
+  const specificTargetCount = selectedContactIds.length + manualNumberCount;
   const audienceSummary =
     audienceMode === "specific"
-      ? specificNumber.trim()
-        ? `Specific number: ${specificNumber.trim()}`
-        : "Specific number selected"
+      ? specificTargetCount > 0
+        ? `Specific contacts: ${specificTargetCount} selected`
+        : "Specific contacts selected"
       : audienceFilter.trim()
         ? `All @detroitmetromen contacts filtered by "${audienceFilter.trim()}"`
         : "All @detroitmetromen contacts";
@@ -189,8 +356,22 @@ export function BlastComposeForm() {
     setMessages((current) => current.filter((_, messageIndex) => messageIndex !== index));
   }
 
+  useEffect(() => {
+    function importBlast(event: Event) {
+      const detail = (event as CustomEvent<ImportBlastDetail>).detail;
+      const importedMessages = detail.messages.map((message) => message.trim()).filter(Boolean);
+
+      setTitle(detail.title.trim() || "Imported SMS blast");
+      setMessages(importedMessages.length > 0 ? importedMessages : [""]);
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    window.addEventListener("contacts:import-blast", importBlast);
+    return () => window.removeEventListener("contacts:import-blast", importBlast);
+  }, []);
+
   return (
-    <form className="blast-compose" action={queueSmsBlast}>
+    <form className="blast-compose" action={queueSmsBlast} ref={formRef}>
       <div className="blast-compose-head">
         <div>
           <p className="eyebrow">Send blast</p>
@@ -201,7 +382,7 @@ export function BlastComposeForm() {
 
       <label>
         <span>Blast name</span>
-        <input name="title" defaultValue="Detroit Metro Men update" maxLength={80} />
+        <input name="title" value={title} maxLength={80} onChange={(event) => setTitle(event.target.value)} />
       </label>
 
       <div className="blast-message-editor">
@@ -244,10 +425,12 @@ export function BlastComposeForm() {
       <AudienceFields
         mode={audienceMode}
         audienceFilter={audienceFilter}
-        specificNumber={specificNumber}
+        manualNumbers={manualNumbers}
+        selectedContactIds={selectedContactIds}
         onModeChange={setAudienceMode}
         onAudienceFilterChange={setAudienceFilter}
-        onSpecificNumberChange={setSpecificNumber}
+        onManualNumbersChange={setManualNumbers}
+        onSelectedContactIdsChange={setSelectedContactIds}
       />
 
       <label>
@@ -284,27 +467,60 @@ export function BlastComposeForm() {
   );
 }
 
-export function SavedBlastSendButton({ blastId }: { blastId: string }) {
+export function ImportBlastToEditorButton({ title, messages }: { title: string; messages: string[] }) {
+  return (
+    <button
+      className="mini-action mini-action-button"
+      type="button"
+      onClick={() => {
+        window.dispatchEvent(
+          new CustomEvent<ImportBlastDetail>("contacts:import-blast", {
+            detail: {
+              title,
+              messages
+            }
+          })
+        );
+      }}
+    >
+      <MessageSquarePlus size={15} />
+      Import to editor
+    </button>
+  );
+}
+
+export function SavedBlastSendActions({ blastId, isSent }: { blastId: string; isSent: boolean }) {
   const dialogId = useId();
   const [sendOpen, setSendOpen] = useState(false);
+  const allContactsLabel = isSent ? "Resend to all" : "Send to all";
 
   return (
-    <form action={sendSavedSmsBlast}>
-      <input type="hidden" name="blastId" value={blastId} />
-      <button className="mini-action mini-action-button" type="button" onClick={() => setSendOpen(true)}>
-        <Send size={15} />
-        Send now
-      </button>
-      {sendOpen ? (
-        <AudienceDialog
-          id={dialogId}
-          title="Send saved blast?"
-          confirmLabel="Send saved blast"
-          confirmAction={sendSavedSmsBlast}
-          showAudienceFields
-          onClose={() => setSendOpen(false)}
-        />
-      ) : null}
-    </form>
+    <>
+      <form action={sendSavedSmsBlast}>
+        <input type="hidden" name="blastId" value={blastId} />
+        <input type="hidden" name="audienceMode" value="all" />
+        <SendSubmitButton className="mini-action mini-action-button">
+          <Send size={15} />
+          {allContactsLabel}
+        </SendSubmitButton>
+      </form>
+      <form action={sendSavedSmsBlast}>
+        <input type="hidden" name="blastId" value={blastId} />
+        <button className="mini-action mini-action-button" type="button" onClick={() => setSendOpen(true)}>
+          <Filter size={15} />
+          Send options
+        </button>
+        {sendOpen ? (
+          <AudienceDialog
+            id={dialogId}
+            title={isSent ? "Resend saved blast?" : "Send saved blast?"}
+            confirmLabel={isSent ? "Resend saved blast" : "Send saved blast"}
+            confirmAction={sendSavedSmsBlast}
+            showAudienceFields
+            onClose={() => setSendOpen(false)}
+          />
+        ) : null}
+      </form>
+    </>
   );
 }

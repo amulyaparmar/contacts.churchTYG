@@ -11,6 +11,8 @@ export type SmsBlastAudienceMode = "all" | "specific";
 export type SmsBlastAudienceInput = {
   mode?: SmsBlastAudienceMode;
   specificNumber?: string | null;
+  specificNumbers?: string[] | null;
+  contactIds?: string[] | null;
   filter?: string | null;
 };
 
@@ -39,6 +41,8 @@ export type CreateSmsBlastInput = {
   scheduledAt?: string | null;
   audienceMode?: SmsBlastAudienceMode;
   specificNumber?: string | null;
+  specificNumbers?: string[] | null;
+  contactIds?: string[] | null;
   audienceFilter?: string | null;
 };
 
@@ -59,6 +63,14 @@ type BlastRecipient = {
   filterText: string;
 };
 
+type NormalizedSmsBlastAudienceInput = {
+  mode: SmsBlastAudienceMode;
+  specificNumber: string | null;
+  specificNumbers: string[];
+  contactIds: string[];
+  filter: string | null;
+};
+
 type BlastDeliveryResult = {
   leadId: string;
   phone: string;
@@ -74,6 +86,8 @@ type BlastDeliverySummary = {
   businessId: typeof DETROIT_METRO_MEN_BUSINESS_ID;
   audienceMode: SmsBlastAudienceMode;
   specificNumber: string | null;
+  specificNumbers: string[];
+  contactIds: string[];
   filter: string | null;
   messageParts: number;
   attempted: number;
@@ -170,29 +184,47 @@ function getBlastMessageParts(row: JsonRecord) {
   return normalizeMessageParts(metadata.messageParts, message);
 }
 
-function normalizeAudienceInput(input?: SmsBlastAudienceInput): Required<SmsBlastAudienceInput> {
+function normalizePhoneList(values?: string[] | null) {
+  return Array.from(new Set((values ?? []).map((value) => normalizePhone(value)).filter(Boolean)));
+}
+
+function normalizeIdList(values?: string[] | null) {
+  return Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean)));
+}
+
+function normalizeAudienceInput(input?: SmsBlastAudienceInput): NormalizedSmsBlastAudienceInput {
   const mode = input?.mode === "specific" ? "specific" : "all";
+  const specificNumbers = normalizePhoneList([...(input?.specificNumbers ?? []), input?.specificNumber ?? ""]);
+  const contactIds = normalizeIdList(input?.contactIds);
+
   return {
     mode,
-    specificNumber: normalizePhone(input?.specificNumber ?? "") || null,
+    specificNumber: specificNumbers[0] ?? null,
+    specificNumbers,
+    contactIds,
     filter: input?.filter?.trim() || null
   };
 }
 
-function getAudienceInputFromMetadata(metadata: JsonRecord): Required<SmsBlastAudienceInput> {
+function getAudienceInputFromMetadata(metadata: JsonRecord): NormalizedSmsBlastAudienceInput {
   const requestedAudience = isRecord(metadata.requestedAudience) ? metadata.requestedAudience : {};
   const mode = pickString(requestedAudience, ["mode"]) === "specific" ? "specific" : "all";
 
   return normalizeAudienceInput({
     mode,
     specificNumber: pickString(requestedAudience, ["specificNumber", "phone"]),
+    specificNumbers: pickStringArray(requestedAudience, ["specificNumbers", "phones"]),
+    contactIds: pickStringArray(requestedAudience, ["contactIds", "leadIds"]),
     filter: pickString(requestedAudience, ["filter"])
   });
 }
 
 function describeAudience(input?: SmsBlastAudienceInput) {
   const audience = normalizeAudienceInput(input);
-  if (audience.mode === "specific") return audience.specificNumber ? `Specific number ${audience.specificNumber}` : "Specific number";
+  if (audience.mode === "specific") {
+    const total = audience.contactIds.length + audience.specificNumbers.length;
+    return total > 0 ? `Specific contacts (${total})` : "Specific contacts";
+  }
   if (audience.filter) return `${DEFAULT_AUDIENCE} filtered by "${audience.filter}"`;
   return DEFAULT_AUDIENCE;
 }
@@ -426,10 +458,11 @@ function normalizeSmsBlast(row: JsonRecord): SmsBlast {
   const sent = pickNumber(delivery, ["sent"]);
   const failed = pickNumber(delivery, ["failed"]);
   const skipped = pickNumber(delivery, ["skipped"]);
+  const specificCount = requestedAudience.contactIds.length + requestedAudience.specificNumbers.length;
   const deliveryLog =
     attempted === null && sent === null && failed === null && skipped === null
       ? null
-      : `${requestedAudience.mode === "specific" ? "Specific number" : "@detroitmetromen"}${
+      : `${requestedAudience.mode === "specific" ? `Specific contacts${specificCount > 0 ? ` (${specificCount})` : ""}` : "@detroitmetromen"}${
           requestedAudience.filter ? ` filtered by "${requestedAudience.filter}"` : ""
         }: ${sent ?? 0} sent, ${failed ?? 0} failed, ${skipped ?? 0} skipped`;
 
@@ -531,9 +564,11 @@ export async function previewSmsBlastAudience() {
     recipients: recipients.map((recipient) => ({
       id: recipient.id,
       name: recipient.name,
+      phone: recipient.phone,
       provider: recipient.provider,
       suppressed: recipient.suppressed,
-      suppressionReason: recipient.suppressionReason
+      suppressionReason: recipient.suppressionReason,
+      filterText: recipient.filterText
     }))
   };
 }
@@ -544,21 +579,31 @@ async function sendRecipient(recipient: BlastRecipient, message: string) {
   return sendPhotonBlastMessage(recipient.phone, message);
 }
 
-function filterBlastRecipients(recipients: BlastRecipient[], audience: Required<SmsBlastAudienceInput>) {
+function filterBlastRecipients(recipients: BlastRecipient[], audience: NormalizedSmsBlastAudienceInput) {
   if (audience.mode === "specific") {
-    if (!audience.specificNumber) throw new Error("Specific phone number is required.");
-    const matched = recipients.find((recipient) => normalizePhone(recipient.phone) === audience.specificNumber);
-    return [
-      matched ?? {
-        id: `specific:${audience.specificNumber}`,
-        name: audience.specificNumber,
-        phone: audience.specificNumber,
-        provider: "photon" as const,
+    if (audience.contactIds.length === 0 && audience.specificNumbers.length === 0) {
+      throw new Error("Choose at least one contact or phone number.");
+    }
+
+    const contactIds = new Set(audience.contactIds);
+    const specificNumbers = new Set(audience.specificNumbers);
+    const selected = recipients.filter(
+      (recipient) => contactIds.has(recipient.id) || specificNumbers.has(normalizePhone(recipient.phone))
+    );
+    const selectedPhones = new Set(selected.map((recipient) => normalizePhone(recipient.phone)));
+    const manualRecipients = audience.specificNumbers
+      .filter((phone) => !selectedPhones.has(phone))
+      .map((phone): BlastRecipient => ({
+        id: `specific:${phone}`,
+        name: phone,
+        phone,
+        provider: "photon",
         suppressed: false,
         suppressionReason: null,
-        filterText: audience.specificNumber
-      }
-    ];
+        filterText: phone
+      }));
+
+    return [...selected, ...manualRecipients];
   }
 
   if (!audience.filter) return recipients;
@@ -620,6 +665,8 @@ async function deliverBlast(config: { url: string; key: string }, messages: stri
     businessId: DETROIT_METRO_MEN_BUSINESS_ID,
     audienceMode: audience.mode,
     specificNumber: audience.specificNumber,
+    specificNumbers: audience.specificNumbers,
+    contactIds: audience.contactIds,
     filter: audience.filter,
     messageParts: messageParts.length,
     attempted: attemptedRecipients,
@@ -728,6 +775,8 @@ async function deliverAndUpdateSmsBlast(
         requestedAudience: {
           mode: delivery.audienceMode,
           specificNumber: delivery.specificNumber,
+          specificNumbers: delivery.specificNumbers,
+          contactIds: delivery.contactIds,
           filter: delivery.filter
         },
         delivery
@@ -746,6 +795,8 @@ async function deliverAndUpdateSmsBlast(
           businessId: DETROIT_METRO_MEN_BUSINESS_ID,
           audienceMode: normalizeAudienceInput(audience).mode,
           specificNumber: normalizeAudienceInput(audience).specificNumber,
+          specificNumbers: normalizeAudienceInput(audience).specificNumbers,
+          contactIds: normalizeAudienceInput(audience).contactIds,
           filter: normalizeAudienceInput(audience).filter,
           messageParts: messages.length,
           attempted: 0,
@@ -900,6 +951,8 @@ export async function createSmsBlast(input: CreateSmsBlastInput) {
   const audience = normalizeAudienceInput({
     mode: input.audienceMode,
     specificNumber: input.specificNumber,
+    specificNumbers: input.specificNumbers,
+    contactIds: input.contactIds,
     filter: input.audienceFilter
   });
   const row: JsonRecord = {
